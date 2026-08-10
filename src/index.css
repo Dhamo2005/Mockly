@@ -1,0 +1,59 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #0b57d0;
+  --color-on-primary: #ffffff;
+  --color-primary-container: #d3e3fd;
+  --color-on-primary-container: #041e49;
+  
+  --color-secondary: #00639b;
+  --color-on-secondary: #ffffff;
+  --color-secondary-container: #cce5ff;
+  --color-on-secondary-container: #001d31;
+
+  --color-surface: #f8fafd;
+  --color-surface-container: #eef2f9;
+  --color-on-surface: #1f1f1f;
+  --color-on-surface-variant: #444746;
+  --color-outline: #747775;
+  --color-outline-variant: #c4c7c5;
+}
+
+:root, body {
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  height: 100dvh;
+  overflow: hidden; /* Lock viewport completely as per strict M3 layout specs */
+  background-color: var(--color-surface);
+  color: var(--color-on-surface);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.google-app-view-container {
+  contain: strict;
+  content-visibility: auto;
+  contain-intrinsic-size: 0 800px; /* Placeholder sizing for virtualized lists */
+}
+
+.google-main-stage {
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  background-color: var(--color-surface-container);
+  contain: strict; 
+  content-visibility: auto;
+  contain-intrinsic-size: 0 800px;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  height: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.1);
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: 4px;
+}

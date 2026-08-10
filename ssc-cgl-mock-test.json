@@ -1,0 +1,129 @@
+[
+  {
+    "id": "ssc-cgl-t1-12sep2025-s1",
+    "title": "SSC CGL T-I Similar Paper (Held on 12 Sep 2025 S1)",
+    "description": "A comprehensive mock test mimicking the SSC CGL Tier-I examination, comprising Reasoning, General Awareness, Quantitative Aptitude, and English Comprehension.",
+    "timeLimit": 3600,
+    "themeColor": "#e11d48",
+    "examCategory": "SSC CGL Exam",
+    "sections": [
+      { "name": "General Intelligence and Reasoning", "timeLimit": 900 },
+      { "name": "General Awareness", "timeLimit": 600 },
+      { "name": "Quantitative Aptitude", "timeLimit": 1200 },
+      { "name": "English Comprehension", "timeLimit": 900 }
+    ],
+    "questions": [
+      {
+        "id": "q1",
+        "section": "General Intelligence and Reasoning",
+        "text": { "en": "A man said, “My father’s wife’s only son is the brother of your mother.” How is the man related to you?" },
+        "options": [
+          { "id": "a", "text": { "en": "Uncle" } },
+          { "id": "b", "text": { "en": "Father" } },
+          { "id": "c", "text": { "en": "Grandfather" } },
+          { "id": "d", "text": { "en": "Brother" } }
+        ],
+        "correctOptionId": "a",
+        "explanation": { "en": "The man's father's wife is his mother. His mother's only son is himself. If he is the brother of your mother, he is your Uncle." }
+      },
+      {
+        "id": "q2",
+        "section": "General Intelligence and Reasoning",
+        "text": { "en": "In the following question, the second word is related to the first word by a specific pattern of letter transformation. Identify the same pattern and apply it to the third word to find the correct option that completes the analogy.\nCOLD : FRPE :: WARM : ?" },
+        "options": [
+          { "id": "a", "text": { "en": "ZDUN" } },
+          { "id": "b", "text": { "en": "ZDVP" } },
+          { "id": "c", "text": { "en": "ZDVN" } },
+          { "id": "d", "text": { "en": "YDUP" } }
+        ],
+        "correctOptionId": "c",
+        "explanation": { "en": "Pattern is +3, +3, +4, +1... W(+3)=Z, A(+3)=D, R(+4)=V, M(+1)=N -> ZDVN." }
+      },
+      {
+        "id": "q3",
+        "section": "General Intelligence and Reasoning",
+        "text": { "en": "Select the letter-cluster from among the given options that can replace the question mark (?) in the following series.\nXZYX, XYXX, XXWX, XWVX, ?" },
+        "options": [
+          { "id": "a", "text": { "en": "XVUX" } },
+          { "id": "b", "text": { "en": "XTVX" } },
+          { "id": "c", "text": { "en": "XUVX" } },
+          { "id": "d", "text": { "en": "XUTX" } }
+        ],
+        "correctOptionId": "a"
+      },
+      {
+        "id": "q26",
+        "section": "General Awareness",
+        "text": { "en": "Which Article of the Indian Constitution was amended by the 106th Amendment Act to provide 1/3rd reservation for women?" },
+        "options": [
+          { "id": "a", "text": { "en": "Article 239AA" } },
+          { "id": "b", "text": { "en": "Article 330A" } },
+          { "id": "c", "text": { "en": "Article 332A" } },
+          { "id": "d", "text": { "en": "All of the above" } }
+        ],
+        "correctOptionId": "d"
+      },
+      {
+        "id": "q27",
+        "section": "General Awareness",
+        "text": { "en": "Under the Indus Waters Treaty (1960), India has unrestricted rights over which set of rivers?" },
+        "options": [
+          { "id": "a", "text": { "en": "Indus, Jhelum, Chenab" } },
+          { "id": "b", "text": { "en": "Ravi, Beas, Satluj" } },
+          { "id": "c", "text": { "en": "Jhelum, Chenab, Ravi" } },
+          { "id": "d", "text": { "en": "Indus, Beas, Satluj" } }
+        ],
+        "correctOptionId": "b"
+      },
+      {
+        "id": "q51",
+        "section": "Quantitative Aptitude",
+        "text": { "en": "P and Q start a business. P invests ₹90,000 for 8 months, Q invests ₹1,50,000 for 5 months. What is Q's share of a ₹50,000 profit (approximate)?" },
+        "options": [
+          { "id": "a", "text": { "en": "₹20,000" } },
+          { "id": "b", "text": { "en": "₹32,000" } },
+          { "id": "c", "text": { "en": "₹35,000" } },
+          { "id": "d", "text": { "en": "₹25,510" } }
+        ],
+        "correctOptionId": "d"
+      },
+      {
+        "id": "q58",
+        "section": "Quantitative Aptitude",
+        "text": { "en": "Evaluate:\n$$8\\frac{1}{3} - \\left[\\frac{7}{9} \\div \\left\\{\\frac{2}{5} - \\left(\\frac{1}{3} \\times \\left(\\frac{5}{6} - \\frac{1}{6}\\right)\\right)\\right\\}\\right]$$" },
+        "options": [
+          { "id": "a", "text": { "en": "-41/15" } },
+          { "id": "b", "text": { "en": "45/23" } },
+          { "id": "c", "text": { "en": "95/24" } },
+          { "id": "d", "text": { "en": "32/3" } }
+        ],
+        "correctOptionId": "c",
+        "explanation": { "en": "Solving BODMAS: Inner bracket gives 4/6 = 2/3. Multiplied by 1/3 gives 2/9. 2/5 - 2/9 = 8/45. 7/9 / (8/45) = 7/9 * 45/8 = 35/8. 25/3 - 35/8 = (200 - 105)/24 = 95/24." }
+      },
+      {
+        "id": "q76",
+        "section": "English Comprehension",
+        "text": { "en": "Find the part of the sentence that contains an error:\nWhat makes the draft legislation especially contentious is not its proposed restructuring of fiscal authority per se, (1)/ but that it assumes, without empirical evidence, (2)/ a fiscal parity among states whose developmental starting points are (3)/ incomparable by any accepted standard. (4)" },
+        "options": [
+          { "id": "a", "text": { "en": "(1)" } },
+          { "id": "b", "text": { "en": "(2)" } },
+          { "id": "c", "text": { "en": "(3)" } },
+          { "id": "d", "text": { "en": "(4)" } }
+        ],
+        "correctOptionId": "b"
+      },
+      {
+        "id": "q84",
+        "section": "English Comprehension",
+        "text": { "en": "Choose the correct one-word substitute for: 'A person who speaks two languages fluently'." },
+        "options": [
+          { "id": "a", "text": { "en": "Accusation" } },
+          { "id": "b", "text": { "en": "Denunciation" } },
+          { "id": "c", "text": { "en": "Bilingual" } },
+          { "id": "d", "text": { "en": "Indictment" } }
+        ],
+        "correctOptionId": "c"
+      }
+    ]
+  }
+]

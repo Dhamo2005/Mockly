@@ -1,0 +1,6 @@
+{
+  "name": "Mockly",
+  "description": "Mock test platform with timer, analytics, multi-language support, spaced repetition, and import/export features.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

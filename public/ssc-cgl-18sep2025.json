@@ -1,0 +1,472 @@
+[
+  {
+    "id": "ssc-cgl-18sep2025-s3",
+    "title": "SSC CGL T-I Similar Paper (Held on 18 Sep 2025 S3)",
+    "description": "A comprehensive SSC CGL mock test with Reasoning, General Awareness, Quantitative Aptitude, and English.",
+    "timeLimit": 3600,
+    "themeColor": "#8b5cf6",
+    "examCategory": "SSC CGL",
+    "sections": [
+      {
+        "name": "General Intelligence and Reasoning",
+        "timeLimit": 900
+      },
+      {
+        "name": "General Awareness",
+        "timeLimit": 600
+      },
+      {
+        "name": "Quantitative Aptitude",
+        "timeLimit": 1200
+      },
+      {
+        "name": "English Comprehension",
+        "timeLimit": 900
+      }
+    ],
+    "questions": [
+      {
+        "id": "q1",
+        "section": "General Intelligence and Reasoning",
+        "text": {
+          "en": "A is the sister of B. B is the brother of C. C is the mother of D. How is A related to D?"
+        },
+        "options": [
+          {
+            "id": "a",
+            "text": {
+              "en": "Sister"
+            }
+          },
+          {
+            "id": "b",
+            "text": {
+              "en": "Cousin"
+            }
+          },
+          {
+            "id": "c",
+            "text": {
+              "en": "Aunt"
+            }
+          },
+          {
+            "id": "d",
+            "text": {
+              "en": "Cannot be determined"
+            }
+          }
+        ],
+        "correctOptionId": "c"
+      },
+      {
+        "id": "q2",
+        "section": "General Intelligence and Reasoning",
+        "text": {
+          "en": "What is the sum of the first 15 natural numbers?"
+        },
+        "options": [
+          {
+            "id": "a",
+            "text": {
+              "en": "110"
+            }
+          },
+          {
+            "id": "b",
+            "text": {
+              "en": "120"
+            }
+          },
+          {
+            "id": "c",
+            "text": {
+              "en": "130"
+            }
+          },
+          {
+            "id": "d",
+            "text": {
+              "en": "135"
+            }
+          }
+        ],
+        "correctOptionId": "b"
+      },
+      {
+        "id": "q3",
+        "section": "General Intelligence and Reasoning",
+        "text": {
+          "en": "Pointing to a man, Rita says, \"He is the son of my mother’s brother.\" How is the man related to Rita?"
+        },
+        "options": [
+          {
+            "id": "a",
+            "text": {
+              "en": "Brother"
+            }
+          },
+          {
+            "id": "b",
+            "text": {
+              "en": "Cousin"
+            }
+          },
+          {
+            "id": "c",
+            "text": {
+              "en": "Uncle"
+            }
+          },
+          {
+            "id": "d",
+            "text": {
+              "en": "Sister"
+            }
+          }
+        ],
+        "correctOptionId": "b"
+      },
+      {
+        "id": "q4",
+        "section": "General Intelligence and Reasoning",
+        "text": {
+          "en": "Find the odd one out:\nMercury, Venus, Earth, Moon, Mars"
+        },
+        "options": [
+          {
+            "id": "a",
+            "text": {
+              "en": "Mercury"
+            }
+          },
+          {
+            "id": "b",
+            "text": {
+              "en": "Venus"
+            }
+          },
+          {
+            "id": "c",
+            "text": {
+              "en": "Moon"
+            }
+          },
+          {
+            "id": "d",
+            "text": {
+              "en": "Mars"
+            }
+          }
+        ],
+        "correctOptionId": "c"
+      },
+      {
+        "id": "q26",
+        "section": "General Awareness",
+        "text": {
+          "en": "In the photoelectric effect:\n1. Emission depends on frequency threshold.\n2. Higher intensity increases number of electrons."
+        },
+        "options": [
+          {
+            "id": "a",
+            "text": {
+              "en": "Only 1"
+            }
+          },
+          {
+            "id": "b",
+            "text": {
+              "en": "Only 2"
+            }
+          },
+          {
+            "id": "c",
+            "text": {
+              "en": "Both"
+            }
+          },
+          {
+            "id": "d",
+            "text": {
+              "en": "Neither 1 or 2"
+            }
+          }
+        ],
+        "correctOptionId": "c"
+      },
+      {
+        "id": "q27",
+        "section": "General Awareness",
+        "text": {
+          "en": "The Startup India initiative includes which of the following components to financially support early-stage start-ups?"
+        },
+        "options": [
+          {
+            "id": "a",
+            "text": {
+              "en": "Fund of Funds for Startups (FFS)"
+            }
+          },
+          {
+            "id": "b",
+            "text": {
+              "en": "Atal Tinkering Labs"
+            }
+          },
+          {
+            "id": "c",
+            "text": {
+              "en": "Pradhan Mantri Kaushal Vikas Yojana"
+            }
+          },
+          {
+            "id": "d",
+            "text": {
+              "en": "National Apprenticeship Promotion Scheme"
+            }
+          }
+        ],
+        "correctOptionId": "a"
+      },
+      {
+        "id": "q28",
+        "section": "General Awareness",
+        "text": {
+          "en": "Which ISRO centre is primarily responsible for propulsion systems and liquid stages for launch vehicles?"
+        },
+        "options": [
+          {
+            "id": "a",
+            "text": {
+              "en": "Satish Dhawan Space Centre"
+            }
+          },
+          {
+            "id": "b",
+            "text": {
+              "en": "Liquid Propulsion Systems Centre"
+            }
+          },
+          {
+            "id": "c",
+            "text": {
+              "en": "National Remote Sensing Centre"
+            }
+          },
+          {
+            "id": "d",
+            "text": {
+              "en": "ISRO Telemetry, Tracking and Command Network"
+            }
+          }
+        ],
+        "correctOptionId": "b"
+      },
+      {
+        "id": "q54",
+        "section": "Quantitative Aptitude",
+        "text": {
+          "en": "If $\\tan \\theta + \\cot \\theta = 5$ and $\\tan \\theta \\cdot \\cot \\theta = 1$, find $\\tan^2 \\theta + \\csc^2 \\theta$."
+        },
+        "options": [
+          {
+            "id": "a",
+            "text": {
+              "en": "23"
+            }
+          },
+          {
+            "id": "b",
+            "text": {
+              "en": "24"
+            }
+          },
+          {
+            "id": "c",
+            "text": {
+              "en": "25"
+            }
+          },
+          {
+            "id": "d",
+            "text": {
+              "en": "26"
+            }
+          }
+        ],
+        "correctOptionId": "b"
+      },
+      {
+        "id": "q55",
+        "section": "Quantitative Aptitude",
+        "text": {
+          "en": "Solve: $\\sqrt{4489} - 3364 \\times \\frac{1}{58}$"
+        },
+        "options": [
+          {
+            "id": "a",
+            "text": {
+              "en": "9.0"
+            }
+          },
+          {
+            "id": "b",
+            "text": {
+              "en": "11.0"
+            }
+          },
+          {
+            "id": "c",
+            "text": {
+              "en": "13.0"
+            }
+          },
+          {
+            "id": "d",
+            "text": {
+              "en": "15.0"
+            }
+          }
+        ],
+        "correctOptionId": "a"
+      },
+      {
+        "id": "q56",
+        "section": "Quantitative Aptitude",
+        "text": {
+          "en": "If 30% of A = 0.25 of B = $\\frac{1}{5}$ of C, then what is A : B : C?"
+        },
+        "options": [
+          {
+            "id": "a",
+            "text": {
+              "en": "10 : 12 : 15"
+            }
+          },
+          {
+            "id": "b",
+            "text": {
+              "en": "5 : 6 : 8"
+            }
+          },
+          {
+            "id": "c",
+            "text": {
+              "en": "6 : 5 : 10"
+            }
+          },
+          {
+            "id": "d",
+            "text": {
+              "en": "15 : 12 : 10"
+            }
+          }
+        ],
+        "correctOptionId": "a"
+      },
+      {
+        "id": "q78",
+        "section": "English Comprehension",
+        "text": {
+          "en": "Select the appropriate word form:\nThe ambiguity in the statute resulted in considerable ____ among stakeholders."
+        },
+        "options": [
+          {
+            "id": "a",
+            "text": {
+              "en": "confuse"
+            }
+          },
+          {
+            "id": "b",
+            "text": {
+              "en": "confusion"
+            }
+          },
+          {
+            "id": "c",
+            "text": {
+              "en": "confused"
+            }
+          },
+          {
+            "id": "d",
+            "text": {
+              "en": "confusing"
+            }
+          }
+        ],
+        "correctOptionId": "b"
+      },
+      {
+        "id": "q79",
+        "section": "English Comprehension",
+        "text": {
+          "en": "Select the most appropriate synonym of the given word: COMPLAISANT"
+        },
+        "options": [
+          {
+            "id": "a",
+            "text": {
+              "en": "Obstinate"
+            }
+          },
+          {
+            "id": "b",
+            "text": {
+              "en": "Subservient"
+            }
+          },
+          {
+            "id": "c",
+            "text": {
+              "en": "Vigilant"
+            }
+          },
+          {
+            "id": "d",
+            "text": {
+              "en": "Diffident"
+            }
+          }
+        ],
+        "correctOptionId": "b"
+      },
+      {
+        "id": "q80",
+        "section": "English Comprehension",
+        "text": {
+          "en": "Select the correct option:\nHe submitted the revised manuscript ahead of schedule, ___ reflected his meticulous planning."
+        },
+        "options": [
+          {
+            "id": "a",
+            "text": {
+              "en": "that"
+            }
+          },
+          {
+            "id": "b",
+            "text": {
+              "en": "which"
+            }
+          },
+          {
+            "id": "c",
+            "text": {
+              "en": "what"
+            }
+          },
+          {
+            "id": "d",
+            "text": {
+              "en": "this"
+            }
+          }
+        ],
+        "correctOptionId": "b"
+      }
+    ]
+  }
+]
