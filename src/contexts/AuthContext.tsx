@@ -1,5 +1,16 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { useGoogleLogin, googleLogout } from '@react-oauth/google';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged } from 'firebase/auth';
+import firebaseConfig from '../../firebase-applet-config.json';
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+
+const provider = new GoogleAuthProvider();
+provider.addScope('https://www.googleapis.com/auth/drive.appdata');
+provider.addScope('https://www.googleapis.com/auth/drive.file');
+provider.addScope('profile');
+provider.addScope('email');
 
 interface User {
   displayName: string;
@@ -18,58 +29,57 @@ const AuthContext = createContext<AuthContextType | null>(null);
 let cachedAccessToken: string | null = null;
 export const getAccessToken = () => cachedAccessToken;
 
+let isSigningIn = false;
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Try to load user from local storage
-    const storedUser = localStorage.getItem('mockly_user');
-    const storedToken = localStorage.getItem('mockly_token');
-    
-    if (storedUser && storedToken) {
-      setUser(JSON.parse(storedUser));
-      cachedAccessToken = storedToken;
-    }
-    setLoading(false);
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        // Try to load token from local storage as a fallback, 
+        // though we prefer the token from sign in result
+        const storedToken = localStorage.getItem('mockly_token');
+        if (storedToken && !cachedAccessToken) {
+           cachedAccessToken = storedToken;
+        }
+
+        setUser({
+          displayName: firebaseUser.displayName || 'User',
+          photoURL: firebaseUser.photoURL || '',
+        });
+      } else {
+        cachedAccessToken = null;
+        setUser(null);
+        localStorage.removeItem('mockly_token');
+      }
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
   }, []);
 
-  const login = useGoogleLogin({
-    scope: 'https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/drive.file profile email',
-    onSuccess: async (tokenResponse) => {
-      cachedAccessToken = tokenResponse.access_token;
-      localStorage.setItem('mockly_token', tokenResponse.access_token);
-      
-      // Fetch user profile
-      try {
-        const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-          headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
-        });
-        const data = await res.json();
-        const userData = {
-          displayName: data.name,
-          photoURL: data.picture,
-        };
-        setUser(userData);
-        localStorage.setItem('mockly_user', JSON.stringify(userData));
-      } catch (e) {
-        console.error('Failed to fetch user profile', e);
+  const signInWithGoogle = async () => {
+    try {
+      isSigningIn = true;
+      const result = await signInWithPopup(auth, provider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      if (credential?.accessToken) {
+        cachedAccessToken = credential.accessToken;
+        localStorage.setItem('mockly_token', credential.accessToken);
       }
-    },
-    onError: (error) => {
-      console.error('Login Failed', error);
+    } catch (error) {
+      console.error('Sign in error:', error);
+    } finally {
+      isSigningIn = false;
     }
-  });
-
-  const signInWithGoogle = () => {
-    login();
   };
 
-  const signOut = () => {
-    googleLogout();
+  const signOut = async () => {
+    await auth.signOut();
     setUser(null);
     cachedAccessToken = null;
-    localStorage.removeItem('mockly_user');
     localStorage.removeItem('mockly_token');
   };
 
