@@ -1,22 +1,22 @@
 @import "tailwindcss";
 
 @theme {
-  --color-primary: #0b57d0;
+  --color-primary: #3b82f6;
   --color-on-primary: #ffffff;
-  --color-primary-container: #d3e3fd;
-  --color-on-primary-container: #041e49;
+  --color-primary-container: #eff6ff;
+  --color-on-primary-container: #1e3a8a;
   
-  --color-secondary: #00639b;
+  --color-secondary: #8b5cf6;
   --color-on-secondary: #ffffff;
-  --color-secondary-container: #cce5ff;
-  --color-on-secondary-container: #001d31;
+  --color-secondary-container: #f5f3ff;
+  --color-on-secondary-container: #4c1d95;
 
-  --color-surface: #f8fafd;
-  --color-surface-container: #eef2f9;
-  --color-on-surface: #1f1f1f;
-  --color-on-surface-variant: #444746;
-  --color-outline: #747775;
-  --color-outline-variant: #c4c7c5;
+  --color-surface: #ffffff;
+  --color-surface-container: #f8fafc;
+  --color-on-surface: #0f172a;
+  --color-on-surface-variant: #64748b;
+  --color-outline: #cbd5e1;
+  --color-outline-variant: #e2e8f0;
 }
 
 :root, body {
@@ -39,7 +39,7 @@
 
 .google-main-stage {
   overflow-y: auto;
-  overflow-x: hidden;
+  overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   background-color: var(--color-surface-container);
   contain: strict; 
@@ -48,12 +48,50 @@
 }
 
 .custom-scrollbar::-webkit-scrollbar {
-  height: 4px;
+  width: 6px;
+  height: 6px;
 }
 .custom-scrollbar::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.1);
+  background: transparent;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.5);
-  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* KaTeX Tailwind reset fixes */
+.katex * {
+    border-color: currentColor !important;
+}
+.katex .katex-html * {
+    box-sizing: border-box;
+}
+.katex-display {
+    margin: 1em 0;
+}
+
+.markdown-body {
+    line-height: 1.6;
+}
+.markdown-body p {
+    margin-bottom: 1em;
+}
+.markdown-body p:last-child {
+    margin-bottom: 0;
+}
+.markdown-body {
+    overflow-wrap: break-word;
+    word-break: break-word;
+}
+.katex-display {
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 8px; /* For scrollbar */
+}
+.markdown-body img {
+    max-width: 100%;
+    height: auto;
 }

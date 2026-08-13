@@ -1,10 +1,12 @@
 import React, { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useStore } from '../store/useStore';
-import { CheckCircle, XCircle, ArrowLeft, BrainCircuit, BarChart2, ListTodo, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { CheckCircle, XCircle, ArrowLeft, BrainCircuit, BarChart2, ListTodo, AlertTriangle, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
+import { cn, getLocalizedText } from '../lib/utils';
 import { Language } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { motion, AnimatePresence } from 'motion/react';
 
 import Markdown from 'react-markdown';
 import remarkMath from 'remark-math';
@@ -14,7 +16,8 @@ import 'katex/dist/katex.min.css';
 export default function ReviewInterface() {
   const { attemptId } = useParams();
   const navigate = useNavigate();
-  const { attempts, tests, language, setLanguage, srsItems, processSRSReview } = useStore();
+  const { attempts, tests, language, setLanguage, deleteAttempt } = useStore();
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   
   const attempt = attempts.find(a => a.id === attemptId);
   const test = tests.find(t => t.id === attempt?.testId);
@@ -27,8 +30,10 @@ export default function ReviewInterface() {
     if (!test) return ['en'];
     const langs = new Set<string>();
     test.questions.forEach(q => {
-      if (q.text) {
+      if (q.text && typeof q.text === 'object') {
         Object.keys(q.text).forEach(lang => langs.add(lang));
+      } else {
+        langs.add('en');
       }
     });
     return Array.from(langs);
@@ -36,8 +41,8 @@ export default function ReviewInterface() {
 
   const handleGoogleSearch = () => {
     if (!currentQuestion) return;
-    const qText = currentQuestion.text[language] || currentQuestion.text['en'];
-    const optionsText = currentQuestion.options.map((opt: any, index: number) => `option ${index + 1}: ${opt.text[language] || opt.text['en']}`).join(', ');
+    const qText = getLocalizedText(currentQuestion.text, language);
+    const optionsText = currentQuestion.options.map((opt: any, index: number) => `option ${index + 1}: ${getLocalizedText(opt.text, language)}`).join(', ');
     const query = encodeURIComponent(`${qText} ${optionsText} explain the answer and explain why other options are wrong`);
     window.open(`https://www.google.com/search?q=${query}`, '_blank');
   };
@@ -109,20 +114,19 @@ export default function ReviewInterface() {
     }
   };
 
-
-  const addToSRS = (qId: string) => {
-    if (!srsItems[qId]) {
-      processSRSReview(qId, 2);
-    } else {
-      alert('Already in Spaced Repetition queue.');
-    }
-  };
-
-  const qText = currentQuestion?.text[language] || currentQuestion?.text['en'];
+  const qText = getLocalizedText(currentQuestion?.text, language);
   const expText = currentQuestion?.explanation?.[language] || currentQuestion?.explanation?.['en'];
 
+  const positiveMarks = test.positiveMarks ?? (test.examCategory === 'SSC CGL' ? 2.0 : 1.0);
+  const negativeMarks = test.negativeMarks ?? (test.examCategory === 'SSC CGL' ? 0.5 : 0.25);
+  const maxPossibleMarks = test.questions.length * positiveMarks;
+
+  const grossMarks = attempt.correctAnswers * positiveMarks;
+  const negativePenalty = attempt.incorrectAnswers * negativeMarks;
+  const netMarks = attempt.score !== undefined ? attempt.score : Number((grossMarks - negativePenalty).toFixed(2));
+
   return (
-    <div className="max-w-6xl mx-auto space-y-2">
+    <div className="w-full max-w-7xl mx-auto space-y-2">
       <div className="flex items-center justify-between">
         <button 
           onClick={() => navigate('/')}
@@ -130,28 +134,47 @@ export default function ReviewInterface() {
         >
           <ArrowLeft className="h-5 w-5" /> Back to Dashboard
         </button>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowDeleteModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 text-xs font-bold transition-colors"
+            title="Delete this attempt record"
+          >
+            <Trash2 className="w-3.5 h-3.5" /> Delete Attempt Record
+          </button>
         
-        {availableLanguages.length > 1 && (
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-500">Language:</span>
-            <select
-              value={language}
-              onChange={(e) => setLanguage(e.target.value as Language)}
-              className="border border-gray-300 rounded text-sm py-1 px-2"
-            >
-              {availableLanguages.map(lang => (
-                <option key={lang} value={lang}>
-                  {lang === 'en' ? 'English' : lang === 'hi' ? 'Hindi' : lang.toUpperCase()}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
+          {availableLanguages.length > 1 && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500">Language:</span>
+              <select
+                value={language}
+                onChange={(e) => setLanguage(e.target.value as Language)}
+                className="border border-gray-300 rounded text-sm py-1 px-2"
+              >
+                {availableLanguages.map(lang => (
+                  <option key={lang} value={lang}>
+                    {lang === 'en' ? 'English' : lang === 'hi' ? 'Hindi' : lang.toUpperCase()}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="bg-[var(--color-surface)] p-3 rounded-xl border border-gray-200 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
         <div>
-          <h2 className="text-base font-bold text-gray-900">Test Result: {test.title}</h2>
+          <h2 className="text-base font-bold text-gray-900">
+            Test Result:{' '}
+            <span
+              onClick={() => navigate(`/test-details/${test.id}`)}
+              className="cursor-pointer hover:text-blue-600 hover:underline transition-colors"
+              title="View Test Info"
+            >
+              {test.title}
+            </span>
+          </h2>
           <p className="text-gray-500 mt-1">Completed on {new Date(attempt.endTime || 0).toLocaleString()}</p>
         </div>
         
@@ -175,14 +198,14 @@ export default function ReviewInterface() {
             </div>
           </button>
         </div>
-        <div className="flex gap-3 text-center">
+        <div className="flex gap-4 text-center">
           <div>
-            <p className="text-sm text-gray-500 font-medium">Score</p>
-            <p className="text-base font-bold text-blue-600">{attempt.score} / {attempt.totalQuestions}</p>
+            <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Net Score</p>
+            <p className="text-base font-black text-blue-600">{netMarks} / {maxPossibleMarks}</p>
           </div>
           <div>
-            <p className="text-sm text-gray-500 font-medium">Accuracy</p>
-            <p className="text-base font-bold text-green-600">
+            <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Accuracy</p>
+            <p className="text-base font-black text-emerald-600">
               {attempt.totalQuestions > 0 ? Math.round((attempt.correctAnswers / (attempt.correctAnswers + attempt.incorrectAnswers || 1)) * 100) : 0}%
             </p>
           </div>
@@ -190,7 +213,56 @@ export default function ReviewInterface() {
       </div>
       
       {activeTab === 'analytics' ? (
-        <div className="space-y-2 animate-in fade-in">
+        <div className="space-y-3 animate-in fade-in">
+          {/* Detailed Score & Negative Marking Breakdown Card */}
+          <div className="bg-white p-4 md:p-5 rounded-2xl border border-slate-200 shadow-sm">
+            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-3 flex items-center justify-between">
+              <span>Score Breakdown & Penalty Calculation</span>
+              <span className={`text-xs font-bold normal-case px-2.5 py-1 rounded-lg border ${
+                negativeMarks === 0 
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200' 
+                  : 'bg-slate-100 text-slate-700 border-slate-200'
+              }`}>
+                {negativeMarks === 0 ? `Scheme: +${positiveMarks.toFixed(1)} / No Negative Penalty` : `Scheme: +${positiveMarks.toFixed(1)} / -${negativeMarks.toFixed(2)} per question`}
+              </span>
+            </h3>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-blue-50/70 border border-blue-100 p-3.5 rounded-xl">
+                <p className="text-xs font-bold text-blue-600 uppercase tracking-wider">Net Final Score</p>
+                <p className="text-2xl font-black text-blue-900 mt-1">{netMarks}</p>
+                <p className="text-[11px] text-blue-700/80 mt-0.5">Out of {maxPossibleMarks} max marks</p>
+              </div>
+
+              <div className="bg-emerald-50/70 border border-emerald-100 p-3.5 rounded-xl">
+                <p className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Correct Marks (+)</p>
+                <p className="text-2xl font-black text-emerald-900 mt-1">+{grossMarks.toFixed(1)}</p>
+                <p className="text-[11px] text-emerald-700/80 mt-0.5">{attempt.correctAnswers} correct × +{positiveMarks}</p>
+              </div>
+
+              <div className={`${
+                negativeMarks === 0 ? 'bg-emerald-50/50 border border-emerald-100' : 'bg-rose-50/70 border border-rose-100'
+              } p-3.5 rounded-xl`}>
+                <p className={`text-xs font-bold uppercase tracking-wider ${negativeMarks === 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
+                  Negative Penalty (-)
+                </p>
+                <p className={`text-2xl font-black mt-1 ${negativeMarks === 0 ? 'text-emerald-900' : 'text-rose-900'}`}>
+                  {negativeMarks === 0 ? '0.00' : `-${negativePenalty.toFixed(2)}`}
+                </p>
+                <p className={`text-[11px] mt-0.5 ${negativeMarks === 0 ? 'text-emerald-700/80' : 'text-rose-700/80'}`}>
+                  {negativeMarks === 0 ? 'No penalty for incorrect answers' : `${attempt.incorrectAnswers} wrong × -${negativeMarks}`}
+                </p>
+              </div>
+
+              <div className="bg-slate-50 border border-slate-100 p-3.5 rounded-xl">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Accuracy Rate</p>
+                <p className="text-2xl font-black text-slate-800 mt-1">
+                  {attempt.totalQuestions > 0 ? Math.round((attempt.correctAnswers / (attempt.correctAnswers + attempt.incorrectAnswers || 1)) * 100) : 0}%
+                </p>
+                <p className="text-[11px] text-slate-500 mt-0.5">{attempt.correctAnswers} / {attempt.correctAnswers + attempt.incorrectAnswers} attempted</p>
+              </div>
+            </div>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="md:col-span-3 bg-[var(--color-surface)] p-3 rounded-xl border border-gray-200 shadow-sm">
               <h3 className="text-base font-semibold text-gray-800 mb-3">Section Performance</h3>
@@ -248,7 +320,7 @@ export default function ReviewInterface() {
             <div className="bg-[var(--color-surface)] rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col h-[300px] lg:h-[500px]">
                <div className="px-4 py-3 border-b border-gray-100 flex flex-col gap-3 bg-gray-50/50">
                  <h3 className="font-semibold text-gray-800">Questions</h3>
-                 <div className="flex flex-wrap gap-x-4 gap-y-2 text-[10px] text-gray-600">
+                 <div className="flex flex-wrap gap-x-4 gap-y-2 text-[11px] text-gray-600">
                     <div className="flex items-center gap-1.5">
                        <div className="w-4 h-4 bg-[#25b55d] rounded-t-full rounded-b-sm border border-[#25b55d]"></div>
                        <span>Correct</span>
@@ -307,7 +379,7 @@ export default function ReviewInterface() {
               <div className="bg-[var(--color-surface)] rounded-xl border border-gray-200 shadow-sm p-3 md:p-3">
                 <div className="flex justify-between items-start mb-3 border-b border-gray-100 pb-3">
                   <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5 block">{currentQuestion.section}</span>
+                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-0.5 block">{currentQuestion.section}</span>
                     <div className="flex items-center gap-3">
                       <span className="font-bold text-slate-800 text-base">Question {currentQuestionIndex + 1}</span>
                       {isUnanswered ? (
@@ -319,15 +391,6 @@ export default function ReviewInterface() {
                       )}
                     </div>
                   </div>
-                  
-                  {(!isCorrect && !isUnanswered) && (
-                    <button 
-                      onClick={() => addToSRS(currentQuestion.id)}
-                      className="flex items-center gap-2 text-sm bg-indigo-50 text-indigo-700 px-4 py-2 rounded-lg hover:bg-indigo-100 transition-colors font-semibold border border-indigo-100 shadow-sm"
-                    >
-                      <BrainCircuit className="h-4 w-4" /> Add to SRS
-                    </button>
-                  )}
                 </div>
 
                 <div className="text-sm text-slate-800 mb-3 whitespace-pre-wrap leading-normal markdown-body">
@@ -338,7 +401,7 @@ export default function ReviewInterface() {
                   {currentQuestion.options.map((option, idx) => {
                     const isOptSelected = userAnswer === option.id;
                     const isOptCorrect = currentQuestion.correctOptionId === option.id;
-                    const optText = option.text[language] || option.text['en'];
+                    const optText = getLocalizedText(option.text, language);
                     const label = String.fromCharCode(65 + idx);
                     
                     let optStyle = "border-slate-100 bg-slate-50/50";
@@ -413,6 +476,49 @@ export default function ReviewInterface() {
             </div>
           )}
         </div>
+      )}
+
+      {/* Delete Attempt Modal */}
+      {createPortal(
+        <AnimatePresence>
+          {showDeleteModal && (
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                className="bg-white rounded-2xl p-6 md:p-8 max-w-md w-full shadow-2xl border border-slate-100 text-center relative z-10"
+              >
+                <div className="w-16 h-16 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <Trash2 className="w-8 h-8" />
+                </div>
+                <h3 className="text-xl font-bold text-slate-800">Delete Attempt Record?</h3>
+                <p className="text-sm text-slate-500 mt-2 leading-relaxed">
+                  Are you sure you want to delete this attempt record? You will be navigated back to the dashboard.
+                </p>
+                <div className="flex gap-3 mt-6">
+                  <button
+                    onClick={() => setShowDeleteModal(false)}
+                    className="flex-1 py-3 px-4 rounded-xl border border-slate-200 font-bold text-slate-600 hover:bg-slate-50 transition-colors text-sm"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      deleteAttempt(attempt.id);
+                      setShowDeleteModal(false);
+                      navigate('/');
+                    }}
+                    className="flex-1 py-3 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold transition-colors shadow-sm text-sm"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>,
+        document.body
       )}
     </div>
   );

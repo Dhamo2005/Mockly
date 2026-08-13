@@ -1,50 +1,78 @@
 import { useEffect, useRef } from 'react';
 import { useAuth, getAccessToken } from '../contexts/AuthContext';
 import { useStore } from '../store/useStore';
-import { loadFromDrive, saveToDrive } from '../lib/driveSync';
+import { initLocalSQLiteDatabase, resetLocalSQLiteDatabase, loadSQLiteFromDrive, saveSQLiteToDrive } from '../lib/sqliteDriveSync';
 
 export function DriveSync() {
   const { user } = useAuth();
   const loadedOnce = useRef(false);
 
+  // Initialize local SQLite engine and load database immediately on mount
   useEffect(() => {
-    if (!user) {
-      loadedOnce.current = false;
-    }
-  }, [user]);
+    initLocalSQLiteDatabase();
+  }, []);
 
-  // Load from drive when user logs in
+  // Sync database on mount and whenever user changes
   useEffect(() => {
     let active = true;
     
-    async function init() {
+    async function syncData() {
       const token = getAccessToken();
-      if (token && !loadedOnce.current) {
-        await loadFromDrive(token);
-        if (active) loadedOnce.current = true;
-      }
+      await loadSQLiteFromDrive(token);
+      if (active) loadedOnce.current = true;
     }
     
-    init();
+    syncData();
     
     return () => {
       active = false;
     };
   }, [user]);
 
-  // Save to drive when store changes
+  // Save to SQLite database (and Drive if token exists) when store changes
   useEffect(() => {
-    const unsub = useStore.subscribe((state, prevState) => {
-      // Don't save if we haven't finished the initial load yet (if logged in)
-      if (user && !loadedOnce.current) return;
-      
+    const unsub = useStore.subscribe((state) => {
+      if (!loadedOnce.current) return;
       const token = getAccessToken();
-      if (token) {
-        saveToDrive(token, state);
-      }
+      saveSQLiteToDrive(token, state, false);
     });
     return unsub;
+  }, []);
+
+  // Periodic and visibility based sync
+  useEffect(() => {
+    if (!user) return;
+
+    const interval = setInterval(() => {
+      if (!loadedOnce.current) return;
+      const token = getAccessToken();
+      saveSQLiteToDrive(token, useStore.getState(), false);
+    }, 45000);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden' && loadedOnce.current) {
+        const token = getAccessToken();
+        saveSQLiteToDrive(token, useStore.getState(), true);
+      }
+    };
+    
+    const handleOnline = () => {
+      if (loadedOnce.current) {
+        const token = getAccessToken();
+        saveSQLiteToDrive(token, useStore.getState(), false);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('online', handleOnline);
+    
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('online', handleOnline);
+    };
   }, [user]);
 
   return null;
 }
+
