@@ -1,28 +1,43 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useStore } from '../store/useStore';
-import { useHeader } from '../contexts/HeaderContext';
-import { ArrowLeft, CheckCircle, ChevronLeft, ChevronRight, Grid, X, Sparkles, BrainCircuit } from 'lucide-react';
+import { 
+  ArrowLeft, 
+  CheckCircle, 
+  ChevronLeft, 
+  ChevronRight, 
+  Grid, 
+  BrainCircuit, 
+  List, 
+  Sparkles,
+  Search,
+  ExternalLink,
+  BookOpen,
+  SlidersHorizontal,
+  ChevronDown
+} from 'lucide-react';
 import { cn, getLocalizedText } from '../lib/utils';
+import { Language } from '../types';
 import Markdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
-import { motion, AnimatePresence } from 'motion/react';
 
 export default function TestAnswers() {
   const { testId } = useParams();
   const navigate = useNavigate();
-  const { tests, language } = useStore();
-  const { setHeaderContent } = useHeader();
+  const { tests, language, setLanguage } = useStore();
+  
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [isPaletteOpen, setIsPaletteOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<'single' | 'list'>('single');
+  const [selectedSection, setSelectedSection] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
 
   const test = tests.find(t => t.id === testId);
 
   // Extract sections
   const sectionsList = useMemo(() => {
-    if (!test) return ['General'];
+    if (!test) return [];
     const names: string[] = [];
     if (Array.isArray(test.sections) && test.sections.length > 0) {
       test.sections.forEach((sec: any) => {
@@ -43,136 +58,48 @@ export default function TestAnswers() {
       }
     });
 
-    if (names.length === 0) names.push('General');
     return names;
   }, [test, language]);
 
-  // Set Palette in Header (left of profile icon)
+  // Keyboard navigation for fast jumping
   useEffect(() => {
-    if (!test) {
-      setHeaderContent(null);
-      return;
-    }
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (viewMode !== 'single' || !test) return;
 
-    setHeaderContent(
-      <div className="relative flex items-center">
-        <button
-          onClick={() => setIsPaletteOpen(prev => !prev)}
-          className="bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold text-xs px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl shadow-xs flex items-center gap-2 transition-all cursor-pointer"
-          title="Toggle Question Palette"
-        >
-          <Grid className="w-4 h-4" />
-          <span className="hidden sm:inline">Palette</span>
-          <span className="bg-white/20 text-white px-2 py-0.5 rounded-full text-[11px] font-black">
-            {currentQuestionIndex + 1}/{test.questions.length}
-          </span>
-        </button>
+      if (e.key === 'ArrowRight' || e.key === 'j') {
+        if (currentQuestionIndex < test.questions.length - 1) {
+          setCurrentQuestionIndex(prev => prev + 1);
+        }
+      } else if (e.key === 'ArrowLeft' || e.key === 'k') {
+        if (currentQuestionIndex > 0) {
+          setCurrentQuestionIndex(prev => prev - 1);
+        }
+      }
+    };
 
-        {/* Floating Palette Dropdown */}
-        <AnimatePresence>
-          {isPaletteOpen && (
-            <>
-              {/* Backdrop */}
-              <div 
-                className="fixed inset-0 z-40 bg-slate-900/10 backdrop-blur-2xs"
-                onClick={() => setIsPaletteOpen(false)}
-              />
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [currentQuestionIndex, test, viewMode]);
 
-              {/* Dropdown Card */}
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95, y: 8 }}
-                animate={{ opacity: 1, scale: 1, y: 8 }}
-                exit={{ opacity: 0, scale: 0.95, y: 8 }}
-                transition={{ duration: 0.15, ease: 'easeOut' }}
-                className="absolute right-0 top-full mt-2 w-80 sm:w-96 max-h-[75vh] z-50 bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col text-slate-800"
-              >
-                {/* Palette Header */}
-                <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/90">
-                  <div className="flex items-center space-x-2.5">
-                    <div className="w-8 h-8 rounded-xl bg-blue-600 text-white font-bold flex items-center justify-center shrink-0 shadow-xs">
-                      <Grid className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Questions Palette</h3>
-                      <p className="text-[11px] text-slate-500">{test.questions.length} Total Questions</p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setIsPaletteOpen(false)}
-                    className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-
-                {/* Sections & Question Buttons Grid */}
-                <div className="flex-1 overflow-y-auto max-h-[55vh] divide-y divide-slate-100">
-                  {sectionsList.map((secName) => {
-                    const secQuestions = test.questions.filter((q) => {
-                      const qSecObj: any = q.section;
-                      const qSec = qSecObj && typeof qSecObj === 'object'
-                        ? (qSecObj[language] || qSecObj['en'] || 'General')
-                        : String(qSecObj || 'General');
-                      return sectionsList.length === 1 || qSec === secName;
-                    });
-
-                    if (secQuestions.length === 0) return null;
-
-                    return (
-                      <div key={secName} className="flex flex-col">
-                        {/* Teal Section Bar */}
-                        <div className="bg-[#2a9aa9] text-white px-3.5 py-2 text-xs font-bold uppercase tracking-wider flex items-center justify-between">
-                          <span>SECTION : {secName}</span>
-                          <span className="text-[11px] bg-white/20 px-2 py-0.5 rounded-full font-semibold">
-                            {secQuestions.length} Qs
-                          </span>
-                        </div>
-
-                        {/* Question Grid */}
-                        <div className="p-3 bg-slate-50/50 grid grid-cols-5 gap-2">
-                          {secQuestions.map((q) => {
-                            const globalIdx = test.questions.findIndex((item) => item.id === q.id);
-                            const isSelected = currentQuestionIndex === globalIdx;
-
-                            return (
-                              <button
-                                key={q.id}
-                                onClick={() => {
-                                  setCurrentQuestionIndex(globalIdx);
-                                  setIsPaletteOpen(false);
-                                }}
-                                className={cn(
-                                  "h-9 rounded-xl font-bold text-xs flex items-center justify-center transition-all border shadow-2xs cursor-pointer",
-                                  isSelected
-                                    ? "bg-blue-600 text-white border-blue-600 ring-2 ring-blue-500 ring-offset-2 scale-105 z-10"
-                                    : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
-                                )}
-                                title={`Question ${globalIdx + 1} (${secName})`}
-                              >
-                                {globalIdx + 1}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </motion.div>
-            </>
-          )}
-        </AnimatePresence>
-      </div>
-    );
-
-    return () => setHeaderContent(null);
-  }, [test, currentQuestionIndex, isPaletteOpen, language, sectionsList, setHeaderContent]);
+  const availableLanguages = useMemo(() => {
+    if (!test) return ['en'];
+    const langs = new Set<string>();
+    test.questions.forEach(q => {
+      if (q.text && typeof q.text === 'object') {
+        Object.keys(q.text).forEach(lang => langs.add(lang));
+      } else {
+        langs.add('en');
+      }
+    });
+    return Array.from(langs);
+  }, [test]);
 
   if (!test) {
     return (
       <div className="w-full max-w-7xl mx-auto text-center py-12">
-        <h2 className="text-xl font-bold text-slate-900">Test not found</h2>
-        <button onClick={() => navigate('/tests')} className="mt-4 text-blue-600 hover:underline font-semibold">
+        <h2 className="text-lg font-bold text-slate-800">Test not found</h2>
+        <button onClick={() => navigate('/tests')} className="mt-3 text-cyan-600 hover:underline text-xs font-bold">
           Back to Tests
         </button>
       </div>
@@ -182,7 +109,7 @@ export default function TestAnswers() {
   const currentQuestion = test.questions[currentQuestionIndex] || test.questions[0];
   const qText = currentQuestion?.text?.[language] || currentQuestion?.text?.['en'] || '';
   const explanation = currentQuestion?.explanation?.[language] || currentQuestion?.explanation?.['en'] || '';
-  
+
   const currentSecObj: any = currentQuestion?.section;
   const currentSectionName = currentSecObj && typeof currentSecObj === 'object'
     ? (currentSecObj[language] || currentSecObj['en'] || 'General')
@@ -200,192 +127,421 @@ export default function TestAnswers() {
     }
   };
 
-  const handleGoogleSearch = () => {
-    if (!currentQuestion) return;
-    const qTextStr = currentQuestion.text?.[language] || currentQuestion.text?.['en'] || '';
-    const optionsText = currentQuestion.options
+  const handleGoogleSearch = (q: typeof currentQuestion) => {
+    if (!q) return;
+    const qTextStr = q.text?.[language] || q.text?.['en'] || '';
+    const optionsText = q.options
       .map((opt: any, index: number) => {
         const optStr = typeof opt.text === 'object' ? (getLocalizedText(opt.text, language)) : opt.text;
         return `option ${index + 1}: ${optStr}`;
       })
       .join(', ');
-    const query = encodeURIComponent(`${qTextStr} ${optionsText} explain the answer and explain why other options are wrong`);
+    const query = encodeURIComponent(`${qTextStr} ${optionsText} explain answer step by step`);
     window.open(`https://www.google.com/search?q=${query}`, '_blank');
   };
 
+  // Filtered questions for list view or search
+  const filteredQuestions = test.questions.filter((q, idx) => {
+    const secObj: any = q.section;
+    const secName = secObj && typeof secObj === 'object'
+      ? (secObj[language] || secObj['en'] || 'General')
+      : String(secObj || 'General');
+    
+    if (selectedSection !== 'all' && secName !== selectedSection) return false;
+    
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      const txt = (q.text?.[language] || q.text?.['en'] || '').toLowerCase();
+      const qNum = (idx + 1).toString();
+      return txt.includes(query) || qNum === query;
+    }
+    return true;
+  });
+
   return (
-    <div className="w-full max-w-7xl mx-auto space-y-5 relative pb-16">
-      {/* Top Header Information Card */}
-      <div className="flex items-center justify-between bg-white p-4 rounded-2xl shadow-xs border border-slate-100">
-        <div className="flex items-center space-x-3">
+    <div className="w-full max-w-7xl mx-auto space-y-2.5 font-sans text-slate-800 pb-10" id="test-answers-root">
+      
+      {/* 1. ULTRA-COMPACT TOP TOOLBAR */}
+      <div className="bg-white px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl border border-slate-200/90 shadow-2xs flex flex-wrap items-center justify-between gap-2 text-xs">
+        
+        {/* Left: Back + Compact Title */}
+        <div className="flex items-center gap-2 min-w-0">
           <button 
             onClick={() => navigate(`/test-details/${test.id}`)}
-            className="p-2 hover:bg-slate-100 rounded-xl text-slate-600 transition-colors cursor-pointer"
+            className="p-1 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-800 transition-colors"
             title="Back to Test Details"
           >
-            <ArrowLeft className="w-5 h-5" />
+            <ArrowLeft className="w-4 h-4" />
           </button>
-          <div>
-            <h1 className="text-lg font-black text-slate-800 tracking-tight flex items-center gap-2">
-              <span 
-                onClick={() => navigate(`/test-details/${test.id}`)}
-                className="cursor-pointer hover:text-blue-600 hover:underline transition-colors"
-                title="View Test Info"
-              >
-                {test.title}
-              </span>
-              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-100">
+          <div className="truncate">
+            <h1 className="font-bold text-slate-800 text-xs sm:text-sm truncate flex items-center gap-1.5">
+              <span className="truncate">{test.title}</span>
+              <span className="px-1.5 py-0.2 rounded bg-cyan-50 text-cyan-700 border border-cyan-200 text-[10px] font-bold shrink-0">
                 Answer Key
               </span>
             </h1>
-            <p className="text-xs text-slate-400 font-medium mt-0.5">{test.questions.length} Questions total</p>
+            <span className="text-[11px] text-slate-400 font-medium">
+              {test.questions.length} Questions total
+            </span>
           </div>
         </div>
 
-        {/* Google Search Button in Page Header */}
-        <button
-          onClick={handleGoogleSearch}
-          className="flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 transition-colors cursor-pointer shadow-xs"
-          title="Search Google for detailed explanations"
-        >
-          <BrainCircuit className="w-4 h-4 text-purple-600" />
-          <span className="hidden sm:inline">Search Google for Explanations</span>
-        </button>
+        {/* Right: View Toggle, Filter & Quick Actions */}
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          
+          {/* Section Filter dropdown if multi-section */}
+          {sectionsList.length > 1 && (
+            <select
+              value={selectedSection}
+              onChange={(e) => setSelectedSection(e.target.value)}
+              className="bg-slate-50 border border-slate-200 rounded-lg text-[11px] font-semibold py-1 px-2 text-slate-700 focus:outline-none"
+            >
+              <option value="all">All Sections ({test.questions.length})</option>
+              {sectionsList.map(s => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          )}
+
+          {/* Language Switcher */}
+          {availableLanguages.length > 1 && (
+            <select
+              value={language}
+              onChange={(e) => setLanguage(e.target.value as Language)}
+              className="bg-slate-50 border border-slate-200 rounded-lg text-[11px] font-semibold py-1 px-2 text-slate-700 focus:outline-none"
+            >
+              {availableLanguages.map(l => (
+                <option key={l} value={l}>
+                  {l === 'en' ? 'EN' : l === 'hi' ? 'HI' : l.toUpperCase()}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {/* Mode Switcher: Compact Single vs Full List */}
+          <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+            <button
+              onClick={() => setViewMode('single')}
+              className={cn(
+                "px-2 py-0.5 rounded-md text-[11px] font-bold transition-all",
+                viewMode === 'single' ? "bg-white text-cyan-800 shadow-2xs" : "text-slate-500 hover:text-slate-800"
+              )}
+            >
+              Focus View
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              className={cn(
+                "px-2 py-0.5 rounded-md text-[11px] font-bold transition-all",
+                viewMode === 'list' ? "bg-white text-cyan-800 shadow-2xs" : "text-slate-500 hover:text-slate-800"
+              )}
+            >
+              List All (1-Page)
+            </button>
+          </div>
+
+          {/* Google Search Button */}
+          <button
+            onClick={() => handleGoogleSearch(currentQuestion)}
+            className="hidden md:flex items-center gap-1 px-2.5 py-1 rounded-lg font-bold text-[11px] bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 transition-colors"
+            title="Search explanation on Google"
+          >
+            <BrainCircuit className="w-3.5 h-3.5" />
+            <span>Search Solution</span>
+          </button>
+        </div>
+
       </div>
 
-      {/* Question Card Container */}
-      <div className="space-y-4">
-        {currentQuestion && (
-          <motion.div
-            key={currentQuestion.id}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.2 }}
-            className="bg-white p-6 md:p-8 rounded-2xl shadow-[0_4px_20px_rgba(0,0,0,0.02)] border border-slate-100 space-y-6"
-          >
-            {/* Question Card Header */}
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-              <div className="flex items-center space-x-3">
-                <span className="w-9 h-9 rounded-2xl bg-blue-50 text-blue-600 font-black text-sm flex items-center justify-center shadow-xs">
+      {/* ========================================================= */}
+      {/* 2. MODE A: HIGH-DENSITY SPLIT FOCUS VIEW (ZERO SCROLL)    */}
+      {/* ========================================================= */}
+      {viewMode === 'single' ? (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-2.5 items-start">
+          
+          {/* Left: Always-Visible Compact Question Navigator (4 cols) */}
+          <div className="lg:col-span-4 bg-white rounded-xl border border-slate-200 shadow-2xs p-3 space-y-2.5">
+            <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
+              <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                Question Navigator
+              </span>
+              <span className="text-[10px] font-semibold text-slate-400">
+                {currentQuestionIndex + 1} / {test.questions.length} (Keys: ← →)
+              </span>
+            </div>
+
+            {/* Compact Grid by Sections */}
+            <div className="space-y-2 max-h-[calc(100vh-230px)] overflow-y-auto pr-1 custom-scrollbar">
+              {(sectionsList.length > 0 ? sectionsList : ['General']).map(sec => {
+                const secQs = test.questions
+                  .map((q, idx) => ({ ...q, globalIdx: idx }))
+                  .filter(q => {
+                    const secObj: any = q.section;
+                    const sName = secObj && typeof secObj === 'object' 
+                      ? (secObj[language] || secObj['en'] || 'General') 
+                      : String(secObj || 'General');
+                    return sectionsList.length <= 1 || sName === sec;
+                  });
+
+                if (secQs.length === 0) return null;
+
+                return (
+                  <div key={sec} className="space-y-1">
+                    {sectionsList.length > 1 && (
+                      <div className="text-[10px] font-bold text-slate-500 bg-slate-50 px-2 py-0.5 rounded border border-slate-100 truncate">
+                        {sec} ({secQs.length})
+                      </div>
+                    )}
+                    <div className="grid grid-cols-6 sm:grid-cols-8 lg:grid-cols-6 gap-1">
+                      {secQs.map(q => {
+                        const isSelected = currentQuestionIndex === q.globalIdx;
+                        return (
+                          <button
+                            key={q.id}
+                            onClick={() => setCurrentQuestionIndex(q.globalIdx)}
+                            className={cn(
+                              "h-7 rounded text-[11px] font-bold transition-all border flex flex-col items-center justify-center relative",
+                              isSelected 
+                                ? "bg-cyan-600 text-white border-cyan-600 ring-2 ring-cyan-500/50 shadow-2xs scale-105 z-10" 
+                                : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
+                            )}
+                            title={`Question ${q.globalIdx + 1}: Correct is (${q.correctOptionId?.toUpperCase()})`}
+                          >
+                            <span>{q.globalIdx + 1}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Right: Ultra-Compact Question & Answer Box (8 cols) */}
+          <div className="lg:col-span-8 bg-white rounded-xl border border-slate-200 shadow-2xs p-3.5 sm:p-4 space-y-3">
+            
+            {/* Question Header */}
+            <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-100 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 bg-cyan-600 text-white rounded font-black text-xs">
                   Q{currentQuestionIndex + 1}
                 </span>
-                <span className="text-xs font-bold text-slate-500 bg-slate-100 px-3 py-1 rounded-lg">
+                <span className="font-bold text-slate-500 text-[11px] bg-slate-100 px-2 py-0.5 rounded">
                   {currentSectionName}
                 </span>
               </div>
 
-              <div className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200 flex items-center gap-1.5">
-                <CheckCircle className="w-4 h-4 text-emerald-600" />
-                <span>Correct Answer: Option {currentQuestion.correctOptionId.toUpperCase()}</span>
+              {/* Correct Answer Badge */}
+              <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-bold">
+                <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Correct: Option {currentQuestion.correctOptionId?.toUpperCase()}</span>
               </div>
             </div>
 
             {/* Question Text */}
-            <div className="text-base text-slate-800 leading-relaxed font-medium">
-              <div className="markdown-body">
-                <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{qText}</Markdown>
-              </div>
+            <div className="text-xs sm:text-sm font-medium text-slate-900 leading-relaxed markdown-body">
+              <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                {qText}
+              </Markdown>
             </div>
 
-            {/* Options Grid */}
-            <div className="space-y-3 pt-2">
-              {currentQuestion.options.map((option) => {
-                const isCorrect = option.id === currentQuestion.correctOptionId;
+            {/* Options List - Ultra-Compact (Slim, space-efficient rows) */}
+            <div className="space-y-1.5 pt-1">
+              {currentQuestion.options.map((option, idx) => {
+                const isCorrect = option.id?.toLowerCase() === currentQuestion.correctOptionId?.toLowerCase();
                 const optText = option.text && typeof option.text === 'object'
                   ? (getLocalizedText(option.text, language) || '')
                   : String(option.text || '');
+                const label = String.fromCharCode(65 + idx);
 
                 return (
-                  <div 
-                    key={option.id} 
+                  <div
+                    key={option.id}
                     className={cn(
-                      "flex items-center p-4 rounded-2xl border-2 transition-all",
+                      "flex items-center px-3 py-1.5 rounded-lg border text-xs transition-all",
                       isCorrect 
-                        ? "bg-emerald-50/70 border-emerald-500 ring-1 ring-emerald-500" 
-                        : "bg-white border-slate-100 text-slate-700"
+                        ? "bg-emerald-50/80 border-emerald-500 text-emerald-950 font-bold ring-1 ring-emerald-500/40" 
+                        : "bg-slate-50/50 border-slate-200 text-slate-700"
                     )}
                   >
                     <div className={cn(
-                      "w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold mr-4 shrink-0 shadow-xs transition-colors",
+                      "w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold mr-2.5 shrink-0 border",
                       isCorrect 
-                        ? "bg-emerald-600 text-white" 
-                        : "bg-slate-50 text-slate-400 border border-slate-200"
+                        ? "bg-emerald-600 text-white border-emerald-600" 
+                        : "bg-white text-slate-500 border-slate-300"
                     )}>
-                      {isCorrect ? <CheckCircle className="w-5 h-5 text-white" /> : option.id.toUpperCase()}
+                      {isCorrect ? <CheckCircle className="w-3.5 h-3.5 text-white" /> : label}
                     </div>
-                    <span className={cn(
-                      "text-sm leading-relaxed markdown-body",
-                      isCorrect ? "font-bold text-emerald-950" : "font-medium text-slate-700"
-                    )}>
-                      <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{optText}</Markdown>
-                    </span>
+                    <div className="flex-1 leading-snug markdown-body truncate sm:whitespace-normal">
+                      <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                        {optText}
+                      </Markdown>
+                    </div>
                   </div>
                 );
               })}
             </div>
 
-            {/* Explanation Box & Google Search */}
-            <div className="bg-blue-50/60 rounded-2xl p-5 border border-blue-100 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-blue-700 font-bold text-xs uppercase tracking-wider">
-                  <Sparkles className="w-4 h-4 text-blue-600" />
-                  <span>Explanation & Solution</span>
-                </div>
-
+            {/* Explanation & Solution - Tight Box */}
+            <div className="bg-slate-50/90 rounded-lg p-2.5 border border-slate-200 text-xs space-y-1">
+              <div className="flex items-center justify-between text-[11px] font-bold text-slate-700">
+                <span className="flex items-center gap-1 text-cyan-800">
+                  <Sparkles className="w-3 h-3 text-cyan-600" /> Explanation / Solution:
+                </span>
                 <button
-                  onClick={handleGoogleSearch}
-                  className="flex items-center gap-1.5 text-xs font-bold text-purple-700 bg-purple-100/70 hover:bg-purple-200/80 px-3 py-1.5 rounded-xl transition-colors cursor-pointer border border-purple-200"
+                  onClick={() => handleGoogleSearch(currentQuestion)}
+                  className="text-purple-700 hover:text-purple-900 text-[10px] font-bold flex items-center gap-1 underline"
                 >
-                  <BrainCircuit className="w-3.5 h-3.5 text-purple-600" />
-                  <span>Search Google</span>
+                  <BrainCircuit className="w-3 h-3" /> Search Google
                 </button>
               </div>
-
-              {explanation ? (
-                <div className="text-slate-700 leading-relaxed text-sm markdown-body">
-                  <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{explanation}</Markdown>
-                </div>
-              ) : (
-                <p className="text-xs text-slate-500 italic">No detailed explanation recorded for this question.</p>
-              )}
+              <div className="text-slate-800 leading-normal text-[11px] sm:text-xs markdown-body">
+                {explanation ? (
+                  <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                    {explanation}
+                  </Markdown>
+                ) : (
+                  <span className="text-slate-400 italic">Option {currentQuestion.correctOptionId?.toUpperCase()} is the correct answer.</span>
+                )}
+              </div>
             </div>
-          </motion.div>
-        )}
 
-        {/* Previous / Next Navigation Footer */}
-        <div className="p-4 bg-white rounded-2xl border border-slate-100 shadow-xs flex flex-wrap items-center justify-between gap-3">
-          <button
-            onClick={handlePrev}
-            disabled={currentQuestionIndex === 0}
-            className="px-5 py-2.5 text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded-xl hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 transition-all cursor-pointer"
-          >
-            <ChevronLeft className="w-4 h-4" /> Previous
-          </button>
+            {/* Fast Navigation Footer */}
+            <div className="pt-2 flex items-center justify-between border-t border-slate-100 text-xs">
+              <button
+                onClick={handlePrev}
+                disabled={currentQuestionIndex === 0}
+                className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs disabled:opacity-30 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" /> Previous
+              </button>
 
-          <div className="flex items-center gap-4">
-            <button
-              onClick={handleGoogleSearch}
-              className="hidden md:flex items-center gap-2 px-4 py-2 rounded-full font-bold text-xs bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 transition-colors cursor-pointer"
-            >
-              <BrainCircuit className="w-4 h-4 text-purple-600" />
-              <span>Search Google for Explanations</span>
-            </button>
+              <span className="text-[11px] text-slate-500 font-medium">
+                Question <strong className="text-slate-800">{currentQuestionIndex + 1}</strong> of <strong className="text-slate-800">{test.questions.length}</strong>
+              </span>
 
-            <div className="text-xs font-semibold text-slate-500">
-              Question <span className="font-black text-slate-800">{currentQuestionIndex + 1}</span> of{' '}
-              <span className="font-black text-slate-800">{test.questions.length}</span>
+              <button
+                onClick={handleNext}
+                disabled={currentQuestionIndex === test.questions.length - 1}
+                className="px-4 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs disabled:opacity-30 disabled:cursor-not-allowed transition-colors flex items-center gap-1 shadow-2xs"
+              >
+                Next <ChevronRight className="w-3.5 h-3.5" />
+              </button>
             </div>
+
           </div>
 
-          <button
-            onClick={handleNext}
-            disabled={currentQuestionIndex === test.questions.length - 1}
-            className="px-6 py-2.5 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-xs disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 transition-all cursor-pointer"
-          >
-            Next <ChevronRight className="w-4 h-4" />
-          </button>
         </div>
-      </div>
+      ) : (
+        /* ========================================================= */
+        /* 3. MODE B: FULL LIST (ALL QUESTIONS IN ONE COMPACT PLACE) */
+        /* ========================================================= */
+        <div className="space-y-2.5">
+          <div className="bg-cyan-50/70 border border-cyan-200 px-3 py-1.5 rounded-lg text-xs text-cyan-900 font-medium flex items-center justify-between">
+            <span>Showing all <strong>{filteredQuestions.length}</strong> questions with answers and solutions</span>
+            <button
+              onClick={() => setViewMode('single')}
+              className="text-[11px] font-bold text-cyan-800 underline hover:text-cyan-950"
+            >
+              Switch to Single Question View
+            </button>
+          </div>
+
+          <div className="space-y-2">
+            {filteredQuestions.map((q, index) => {
+              const globalIdx = test.questions.findIndex(item => item.id === q.id);
+              const qTextStr = q.text?.[language] || q.text?.['en'] || '';
+              const expStr = q.explanation?.[language] || q.explanation?.['en'] || '';
+              const secObj: any = q.section;
+              const secName = secObj && typeof secObj === 'object' ? (secObj[language] || secObj['en'] || 'General') : String(secObj || 'General');
+
+              return (
+                <div 
+                  key={q.id}
+                  className="bg-white p-3 rounded-xl border border-slate-200/90 shadow-2xs space-y-2 text-xs"
+                >
+                  {/* Row Header */}
+                  <div className="flex items-center justify-between pb-1 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <span className="px-1.5 py-0.5 bg-slate-800 text-white font-bold rounded text-[10px]">
+                        Q{globalIdx + 1}
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-semibold">{secName}</span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded font-bold text-[11px] flex items-center gap-1">
+                        <CheckCircle className="w-3 h-3 text-emerald-600" /> Answer: Option {q.correctOptionId?.toUpperCase()}
+                      </span>
+                      <button
+                        onClick={() => handleGoogleSearch(q)}
+                        className="text-purple-600 hover:text-purple-800 p-0.5 text-[10px]"
+                        title="Search on Google"
+                      >
+                        <BrainCircuit className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Question Text */}
+                  <div className="font-semibold text-slate-800 leading-snug markdown-body">
+                    <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                      {qTextStr}
+                    </Markdown>
+                  </div>
+
+                  {/* Options 2x2 or 4x1 Compact Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-0.5">
+                    {q.options.map((opt, optIdx) => {
+                      const isCorrect = opt.id?.toLowerCase() === q.correctOptionId?.toLowerCase();
+                      const optText = opt.text && typeof opt.text === 'object'
+                        ? (getLocalizedText(opt.text, language) || '')
+                        : String(opt.text || '');
+                      const label = String.fromCharCode(65 + optIdx);
+
+                      return (
+                        <div
+                          key={opt.id}
+                          className={cn(
+                            "flex items-center px-2 py-1 rounded border text-[11px]",
+                            isCorrect 
+                              ? "bg-emerald-50 border-emerald-400 text-emerald-950 font-bold" 
+                              : "bg-slate-50/50 border-slate-200 text-slate-600"
+                          )}
+                        >
+                          <span className={cn(
+                            "w-4 h-4 rounded text-[9px] font-bold flex items-center justify-center mr-1.5 shrink-0",
+                            isCorrect ? "bg-emerald-600 text-white" : "bg-white text-slate-500 border border-slate-300"
+                          )}>
+                            {label}
+                          </span>
+                          <span className="truncate leading-tight markdown-body">
+                            <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                              {optText}
+                            </Markdown>
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Short Explanation if available */}
+                  {expStr && (
+                    <div className="bg-slate-50 border-l-2 border-cyan-500 p-1.5 text-[11px] text-slate-600 rounded-r markdown-body">
+                      <strong>Solution: </strong>
+                      <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                        {expStr}
+                      </Markdown>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

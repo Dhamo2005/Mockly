@@ -1,25 +1,34 @@
 import { useEffect, useRef } from 'react';
-import { useAuth, getAccessToken } from '../contexts/AuthContext';
+import { useAuth } from '../contexts/AuthContext';
 import { useStore } from '../store/useStore';
-import { initLocalSQLiteDatabase, resetLocalSQLiteDatabase, loadSQLiteFromDrive, saveSQLiteToDrive } from '../lib/sqliteDriveSync';
+import { loadFromFirestore, saveToFirestore } from '../lib/firebaseSync';
 
-export function DriveSync() {
+export function FirebaseSync() {
   const { user } = useAuth();
+  const setIsInitialized = useStore((state) => state.setIsInitialized);
   const loadedOnce = useRef(false);
 
-  // Initialize local SQLite engine and load database immediately on mount
-  useEffect(() => {
-    initLocalSQLiteDatabase();
-  }, []);
-
-  // Sync database on mount and whenever user changes
+  // Sync database whenever user changes
   useEffect(() => {
     let active = true;
     
     async function syncData() {
-      const token = getAccessToken();
-      await loadSQLiteFromDrive(token);
-      if (active) loadedOnce.current = true;
+      if (user) {
+        await loadFromFirestore(user.uid);
+      } else {
+        // If not logged in, we are initialized as an empty state
+        useStore.setState({
+          tests: [],
+          attempts: [],
+          activeTestSessions: {},
+          bookmarks: {}
+        });
+      }
+      
+      if (active) {
+        loadedOnce.current = true;
+        setIsInitialized(true);
+      }
     }
     
     syncData();
@@ -27,17 +36,16 @@ export function DriveSync() {
     return () => {
       active = false;
     };
-  }, [user]);
+  }, [user, setIsInitialized]);
 
-  // Save to SQLite database (and Drive if token exists) when store changes
+  // Save to Firestore when store changes
   useEffect(() => {
     const unsub = useStore.subscribe((state) => {
-      if (!loadedOnce.current) return;
-      const token = getAccessToken();
-      saveSQLiteToDrive(token, state, false);
+      if (!loadedOnce.current || !user) return;
+      saveToFirestore(user.uid, state);
     });
     return unsub;
-  }, []);
+  }, [user]);
 
   // Periodic and visibility based sync
   useEffect(() => {
@@ -45,21 +53,18 @@ export function DriveSync() {
 
     const interval = setInterval(() => {
       if (!loadedOnce.current) return;
-      const token = getAccessToken();
-      saveSQLiteToDrive(token, useStore.getState(), false);
+      saveToFirestore(user.uid, useStore.getState());
     }, 45000);
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden' && loadedOnce.current) {
-        const token = getAccessToken();
-        saveSQLiteToDrive(token, useStore.getState(), true);
+        saveToFirestore(user.uid, useStore.getState());
       }
     };
     
     const handleOnline = () => {
       if (loadedOnce.current) {
-        const token = getAccessToken();
-        saveSQLiteToDrive(token, useStore.getState(), false);
+        saveToFirestore(user.uid, useStore.getState());
       }
     };
 

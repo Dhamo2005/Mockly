@@ -1,15 +1,15 @@
 import { create } from 'zustand';
 import { Test, TestAttempt, Language, ActiveTestSession } from '../types';
 
-export type DriveSyncStatus = 'idle' | 'saving' | 'synced' | 'offline' | 'error';
+export type SyncStatus = 'idle' | 'saving' | 'synced' | 'offline' | 'error';
 
 interface AppState {
   isInitialized: boolean;
   setIsInitialized: (val: boolean) => void;
 
-  driveSyncStatus: DriveSyncStatus;
+  syncStatus: SyncStatus;
   lastSyncedAt: number | null;
-  setDriveSyncStatus: (status: DriveSyncStatus, lastSyncedAt?: number) => void;
+  setSyncStatus: (status: SyncStatus, lastSyncedAt?: number) => void;
 
   language: Language;
   setLanguage: (lang: Language) => void;
@@ -54,10 +54,10 @@ export const useStore = create<AppState>()((set) => ({
   isInitialized: false,
   setIsInitialized: (val) => set({ isInitialized: val }),
 
-  driveSyncStatus: 'idle',
+  syncStatus: 'idle',
   lastSyncedAt: null,
-  setDriveSyncStatus: (status, lastSyncedAt) => set((state) => ({
-    driveSyncStatus: status,
+  setSyncStatus: (status, lastSyncedAt) => set((state) => ({
+    syncStatus: status,
     lastSyncedAt: lastSyncedAt !== undefined ? lastSyncedAt : (status === 'synced' ? Date.now() : state.lastSyncedAt)
   })),
 

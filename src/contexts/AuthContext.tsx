@@ -1,13 +1,14 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import { getAnalytics, isSupported } from 'firebase/analytics';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { useStore } from '../store/useStore';
-import { resetLocalSQLiteDatabase } from '../lib/sqliteDriveSync';
 
 export const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 export const auth = getAuth(app);
+export const db = getFirestore(app);
 
 // Initialize Firebase Analytics if supported in current environment
 export let analytics: any = null;
@@ -28,6 +29,8 @@ provider.addScope('profile');
 provider.addScope('email');
 
 interface User {
+  uid: string;
+  email: string;
   displayName: string;
   photoURL: string;
 }
@@ -55,6 +58,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Test Firestore connection on boot
+    const testConnection = async () => {
+      try {
+        await getDocFromServer(doc(db, 'test', 'connection'));
+      } catch (error) {
+        if(error instanceof Error && error.message.includes('the client is offline')) {
+          console.error("Please check your Firebase configuration. The client is offline.");
+        }
+      }
+    };
+    testConnection();
+
     // Suppress internal Firebase Auth popup cancellation assertion errors
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
       const msg = event.reason?.message || String(event.reason || '');
@@ -79,13 +94,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         setUser({
+          uid: firebaseUser.uid,
+          email: firebaseUser.email || '',
           displayName: firebaseUser.displayName || 'User',
           photoURL: firebaseUser.photoURL || '',
         });
       } else {
         cachedAccessToken = null;
         setUser(null);
-        resetLocalSQLiteDatabase();
       }
       setLoading(false);
     });
@@ -146,7 +162,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     cachedAccessToken = null;
     localStorage.removeItem('mockly_token');
     useStore.getState().clearAllData();
-    resetLocalSQLiteDatabase();
   };
 
   return (

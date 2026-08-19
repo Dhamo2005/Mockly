@@ -34,7 +34,7 @@ export default function Dashboard() {
     show: { opacity: 1, y: 0, transition: { type: "spring" as any, stiffness: 300, damping: 24 } }
   };
 
-  if (!isInitialized) {
+  if (!isInitialized && tests.length === 0 && attempts.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-3">
         <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
@@ -57,7 +57,7 @@ export default function Dashboard() {
         <div>
           <h2 className="text-xl font-bold text-slate-800">You're all set!</h2>
           <p className="text-slate-500 mt-2 max-w-sm mx-auto text-sm leading-relaxed">
-            Your Google Drive storage is connected, but it looks a bit empty. Let's import some mock tests to get started.
+            Your Cloud storage is connected, but it looks a bit empty. Let's import some mock tests to get started.
           </p>
         </div>
         <motion.button
@@ -80,38 +80,37 @@ export default function Dashboard() {
       className="w-full max-w-7xl mx-auto space-y-4 md:space-y-6"
     >
       <motion.div variants={itemVariants} className="pt-0 md:pt-2">
-        <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Welcome Back!</h2>
-        <p className="text-slate-500 text-sm mt-1">Ready to crush your next test?</p>
+        <h2 className="text-xl md:text-2xl font-bold text-slate-800 tracking-tight">Dashboard</h2>
       </motion.div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
-        <motion.div variants={itemVariants} whileHover={{ y: -4 }} className="bg-white p-4 md:p-5 rounded-2xl shadow-[0_4px_20px_rgba(0,0,0,0.03)] border border-slate-100 flex items-center gap-4 transition-all">
-          <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl">
-            <CheckCircle2 className="h-6 w-6" />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <motion.div variants={itemVariants} className="bg-white p-3 md:p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3 transition-all hover:border-blue-200">
+          <div className="p-2.5 bg-blue-50 text-blue-600 rounded-lg shrink-0">
+            <CheckCircle2 className="h-5 w-5" />
           </div>
           <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Tests Completed</p>
-            <p className="text-2xl font-black text-slate-800 mt-0.5">{completedAttempts.length}</p>
+            <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Tests Completed</p>
+            <p className="text-xl font-black text-slate-800 leading-tight">{completedAttempts.length}</p>
           </div>
         </motion.div>
         
-        <motion.div variants={itemVariants} whileHover={{ y: -4 }} className="bg-white p-4 md:p-5 rounded-2xl shadow-[0_4px_20px_rgba(0,0,0,0.03)] border border-slate-100 flex items-center gap-4 transition-all">
-          <div className="p-3 bg-violet-50 text-violet-600 rounded-2xl">
-            <BarChart className="h-6 w-6" />
+        <motion.div variants={itemVariants} className="bg-white p-3 md:p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3 transition-all hover:border-violet-200">
+          <div className="p-2.5 bg-violet-50 text-violet-600 rounded-lg shrink-0">
+            <BarChart className="h-5 w-5" />
           </div>
           <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Avg. Score</p>
-            <p className="text-2xl font-black text-slate-800 mt-0.5">{averageScore}</p>
+            <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Avg. Score</p>
+            <p className="text-xl font-black text-slate-800 leading-tight">{averageScore}</p>
           </div>
         </motion.div>
       </div>
 
-      <motion.div variants={itemVariants} className="mt-4 md:mt-8">
-        <div className="bg-white p-1 rounded-2xl shadow-[0_4px_20px_rgba(0,0,0,0.02)] border border-slate-100">
-          <div className="px-4 md:px-5 py-3 md:py-4 border-b border-slate-50">
-            <h3 className="text-base font-bold text-slate-800">Recent Activity</h3>
+      <motion.div variants={itemVariants} className="mt-4 md:mt-6">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+          <div className="px-3 md:px-4 py-2 md:py-3 border-b border-slate-200 bg-slate-50/50">
+            <h3 className="text-sm font-bold text-slate-800">Recent Activity</h3>
           </div>
-          <div className="divide-y divide-slate-50">
+          <div className="divide-y divide-slate-100">
             {attempts.slice().reverse().slice(0, 5).map((attempt, index) => {
               const test = tests.find(t => t.id === attempt.testId);
               if (!test) return null;
@@ -122,53 +121,54 @@ export default function Dashboard() {
               
               return (
                 <motion.div 
-                  initial={{ opacity: 0, x: -10 }}
+                  initial={{ opacity: 0, x: -5 }}
                   animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: index * 0.05 + 0.3 }}
+                  transition={{ delay: index * 0.05 + 0.1 }}
                   key={attempt.id} 
-                  className="p-3 md:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 md:gap-4 hover:bg-slate-50/50 transition-colors first:rounded-t-none last:rounded-b-2xl"
+                  className="p-2.5 md:p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50 transition-colors"
                 >
-                  <div className="flex-1">
-                    <h4 className="font-semibold text-slate-800 line-clamp-1 cursor-pointer hover:text-blue-600 transition-colors" onClick={() => navigate(`/test-details/${test.id}`)}>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-bold text-sm text-slate-800 line-clamp-1 cursor-pointer hover:text-blue-700 transition-colors" onClick={() => navigate(`/test-details/${test.id}`)}>
                       {test.title}
                     </h4>
-                    <div className="flex items-center gap-3 mt-1.5">
-                      <div className="flex items-center gap-2 flex-1 max-w-[200px]">
-                        <div className="h-2 flex-1 bg-slate-100 rounded-full overflow-hidden">
+                    <div className="flex items-center gap-3 mt-1 text-xs">
+                      <div className="flex items-center gap-2 flex-1 max-w-[150px]">
+                        <div className="h-1.5 flex-1 bg-slate-200 rounded-full overflow-hidden">
                           <div 
                             className="h-full bg-blue-500 rounded-full" 
                             style={{ width: `${percentage}%` }}
                           />
                         </div>
-                        <span className="text-xs font-bold text-slate-600 w-8">{percentage}%</span>
+                        <span className="font-bold text-slate-600 w-8">{percentage}%</span>
                       </div>
+                      <span className="text-slate-400 font-medium whitespace-nowrap">
+                        Score: {attempt.score?.toFixed(1)} / {maxMarks}
+                      </span>
                     </div>
                   </div>
                   
-                  <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0">
                     <button 
                       onClick={() => setAttemptToDelete(attempt.id)}
-                      className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
-                      title="Remove attempt record"
+                      className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-200"
+                      title="Delete attempt record"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
                     <button 
                       onClick={() => navigate(`/review/${attempt.id}`)}
-                      className="relative overflow-hidden flex items-center gap-1.5 text-xs bg-slate-100 text-slate-700 px-4 py-2 rounded-full hover:bg-slate-200 hover:text-slate-900 font-semibold transition-all"
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 font-bold text-[11px] rounded-lg hover:bg-blue-100 transition-colors"
                     >
                       Analytics
-                      <Ripple color="bg-slate-400/20" />
                     </button>
                   </div>
                 </motion.div>
-              )
+              );
             })}
+            
             {attempts.length === 0 && (
-              <div className="px-5 py-8 flex flex-col items-center justify-center text-slate-400">
-                <PlayCircle className="w-10 h-10 opacity-20 mb-3" />
-                <p className="text-sm font-medium">No recent attempts.</p>
-                <p className="text-xs mt-1">Your test history will appear here.</p>
+              <div className="p-8 text-center text-slate-500 text-sm">
+                No recent activity.
               </div>
             )}
           </div>

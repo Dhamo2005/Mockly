@@ -5,7 +5,7 @@ import { useHeader } from '../contexts/HeaderContext';
 import { useStore } from '../store/useStore';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { saveSQLiteToDrive } from '../lib/sqliteDriveSync';
+import { saveToFirestore } from '../lib/firebaseSync';
 
 export const Header = () => {
   const { user, isSigningIn, signInWithGoogle, signOut } = useAuth();
@@ -102,16 +102,14 @@ export const Header = () => {
     }
 
     if (hasCleaned) {
-      const token = getAccessToken();
-      saveSQLiteToDrive(token, useStore.getState(), false);
+      if (user) saveToFirestore(user.uid, useStore.getState());
     }
   }, [activeTestSessions, tests, attempts, clearActiveTestSession]);
 
   const handleDiscardActiveTest = (e: React.MouseEvent, testId: string) => {
     e.stopPropagation();
     clearActiveTestSession(testId);
-    const token = getAccessToken();
-    saveSQLiteToDrive(token, useStore.getState(), true);
+    if (user) saveToFirestore(user.uid, useStore.getState());
   };
 
   useEffect(() => {
@@ -128,16 +126,12 @@ export const Header = () => {
   }, []);
 
   return (
-    <header className="bg-white/80 backdrop-blur-xl h-14 flex items-center justify-between px-4 sm:px-6 shrink-0 z-20 shadow-[0_1px_3px_rgba(0,0,0,0.02)] border-b border-slate-100 relative">
-      <Link to="/" className="flex items-center gap-2.5 hover:opacity-90 transition-opacity outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-lg" aria-label="Go to Dashboard">
-        <motion.div 
-          whileHover={{ rotate: 10, scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          className="bg-blue-600 p-1.5 rounded-xl shadow-[0_2px_10px_rgba(37,99,235,0.25)] text-white flex items-center justify-center"
-        >
+    <header className="bg-white h-12 flex items-center justify-between px-4 sm:px-6 shrink-0 z-20 border-b border-slate-200 relative">
+      <Link to="/" className="flex items-center gap-2 hover:opacity-90 transition-opacity outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded" aria-label="Go to Dashboard">
+        <div className="bg-blue-600 p-1.5 rounded-md shadow-sm text-white flex items-center justify-center">
           <BookOpen className="h-4 w-4" />
-        </motion.div>
-        <h1 className="text-xl font-black text-slate-800 tracking-tight">Mockly</h1>
+        </div>
+        <h1 className="text-lg font-black text-slate-800 tracking-tight">Mockly</h1>
       </Link>
 
       {/* Centered Active Test Button - Only shown when a genuine active test exists and not on test page */}
@@ -174,33 +168,31 @@ export const Header = () => {
         
         {user ? (
           <div className="relative" ref={dropdownRef}>
-            <motion.button 
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
+            <button 
               onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-              className="flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 hover:bg-slate-50 p-1.5 rounded-full transition-colors border border-transparent hover:border-slate-200"
+              className="flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 hover:bg-slate-50 p-1 rounded-md transition-colors border border-transparent hover:border-slate-200"
               aria-label="Toggle user menu"
               aria-expanded={isDropdownOpen}
             >
               <img 
                 src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName || 'User'}&background=random`} 
                 alt={`${user.displayName || 'User'}'s profile`} 
-                className="w-8 h-8 rounded-full border border-slate-200 shadow-sm"
+                className="w-7 h-7 rounded border border-slate-200 shadow-xs"
               />
-              <span className="text-sm font-bold hidden sm:block text-slate-700 pr-2">{user.displayName?.split(' ')[0]}</span>
-            </motion.button>
+              <span className="text-xs font-bold hidden sm:block text-slate-700 pr-1">{user.displayName?.split(' ')[0]}</span>
+            </button>
             
             <AnimatePresence>
               {isDropdownOpen && (
                 <motion.div 
-                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                  transition={{ duration: 0.15 }}
-                  className="absolute right-0 mt-3 w-56 bg-white border border-slate-100 rounded-2xl shadow-xl overflow-hidden z-50 py-2 origin-top-right"
+                  initial={{ opacity: 0, y: 5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 5 }}
+                  transition={{ duration: 0.1 }}
+                  className="absolute right-0 mt-2 w-48 bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden z-50 py-1 origin-top-right"
                 >
-                  <div className="px-5 py-3 border-b border-slate-50 mb-1 bg-slate-50/50">
-                    <p className="text-sm font-bold text-slate-800 truncate">{user.displayName}</p>
+                  <div className="px-4 py-2 border-b border-slate-100 mb-1 bg-slate-50">
+                    <p className="text-[11px] font-bold text-slate-800 truncate">{user.displayName}</p>
                   </div>
                   
                   <button
@@ -208,9 +200,9 @@ export const Header = () => {
                       setIsDropdownOpen(false);
                       navigate('/settings');
                     }}
-                    className="flex items-center gap-3 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 hover:text-blue-600 transition-colors w-full text-left"
+                    className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 hover:text-blue-700 transition-colors w-full text-left"
                   >
-                    <Settings className="w-[18px] h-[18px]" />
+                    <Settings className="w-3.5 h-3.5" />
                     Settings
                   </button>
                   
@@ -219,9 +211,9 @@ export const Header = () => {
                       signOut();
                       setIsDropdownOpen(false);
                     }}
-                    className="flex items-center gap-3 px-5 py-2.5 text-sm font-semibold text-red-500 hover:bg-red-50 transition-colors w-full text-left mt-1"
+                    className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors w-full text-left"
                   >
-                    <LogOut className="w-[18px] h-[18px]" />
+                    <LogOut className="w-3.5 h-3.5" />
                     Logout
                   </button>
                 </motion.div>
@@ -229,16 +221,14 @@ export const Header = () => {
             </AnimatePresence>
           </div>
         ) : (
-          <motion.button 
-            whileHover={{ scale: isSigningIn ? 1 : 1.02 }}
-            whileTap={{ scale: isSigningIn ? 1 : 0.98 }}
+          <button 
             onClick={signInWithGoogle}
             disabled={isSigningIn}
-            className="relative flex items-center justify-center bg-white border border-slate-200 shadow-sm rounded-full text-slate-700 font-bold text-sm h-10 px-4 hover:bg-slate-50 hover:border-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center justify-center bg-white border border-slate-200 shadow-xs rounded-md text-slate-700 font-bold text-[11px] h-8 px-3 hover:bg-slate-50 hover:border-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             aria-label="Sign in with Google"
           >
-            <div className="flex items-center gap-2.5">
-              <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" className="w-4 h-4 block">
+            <div className="flex items-center gap-2">
+              <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" className="w-3.5 h-3.5 block">
                 <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
                 <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
                 <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
@@ -247,7 +237,7 @@ export const Header = () => {
               </svg>
               <span>Sign In</span>
             </div>
-          </motion.button>
+          </button>
         )}
       </div>
     </header>

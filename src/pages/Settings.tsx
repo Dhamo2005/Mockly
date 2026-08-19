@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Settings as SettingsIcon, Save, Trash2, LogOut, LogIn, HardDrive, ShieldAlert } from 'lucide-react';
+import { Settings as SettingsIcon, Save, Trash2, LogOut, LogIn, HardDrive, ShieldAlert, Cloud } from 'lucide-react';
 import { useStore } from '../store/useStore';
-import { useAuth, getAccessToken } from '../contexts/AuthContext';
-import { saveSQLiteToDrive, loadSQLiteFromDrive } from '../lib/sqliteDriveSync';
+import { useAuth } from '../contexts/AuthContext';
+import { saveToFirestore, loadFromFirestore } from '../lib/firebaseSync';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function Settings() {
@@ -15,21 +15,19 @@ export default function Settings() {
   const [confirmAction, setConfirmAction] = useState<'all' | 'tests' | 'attempts' | null>(null);
 
   const handleForceSync = async () => {
-    const token = getAccessToken();
-    if (!token) return;
-    setSyncStatus('Saving SQLite Database to Google Drive...');
+    if (!user) return;
+    setSyncStatus('Saving Database to Firebase...');
     const state = useStore.getState();
-    await saveSQLiteToDrive(token, state, true);
-    setSyncStatus('SQLite Database successfully synced to Google Drive!');
+    await saveToFirestore(user.uid, state);
+    setSyncStatus('Database successfully synced to Firebase!');
     setTimeout(() => setSyncStatus(''), 3000);
   };
   
   const handleForceLoad = async () => {
-    const token = getAccessToken();
-    if (!token) return;
-    setSyncStatus('Loading SQLite Database from Google Drive...');
-    await loadSQLiteFromDrive(token);
-    setSyncStatus('SQLite Database successfully loaded from Google Drive!');
+    if (!user) return;
+    setSyncStatus('Loading Database from Firebase...');
+    await loadFromFirestore(user.uid);
+    setSyncStatus('Database successfully loaded from Firebase!');
     setTimeout(() => setSyncStatus(''), 3000);
   };
 
@@ -54,7 +52,7 @@ export default function Settings() {
         <section className="bg-white rounded-2xl p-6 md:p-8 border border-slate-100 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
           <div className="flex items-center gap-3 mb-6">
             <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl">
-              <HardDrive className="w-5 h-5" />
+              <Cloud className="w-5 h-5" />
             </div>
             <h3 className="text-lg font-bold text-slate-800">Cloud Sync</h3>
           </div>
@@ -104,7 +102,7 @@ export default function Settings() {
                    onClick={handleForceSync}
                    className="flex-1 bg-slate-800 text-white px-6 py-4 rounded-xl font-bold hover:bg-slate-900 transition-colors flex items-center justify-center gap-2 shadow-sm"
                  >
-                   <Save className="w-5 h-5" /> Backup to Drive
+                   <Save className="w-5 h-5" /> Backup to Cloud
                  </motion.button>
                  <motion.button 
                    whileHover={{ scale: 1.01 }}
@@ -112,7 +110,7 @@ export default function Settings() {
                    onClick={handleForceLoad}
                    className="flex-1 bg-blue-50 text-blue-700 px-6 py-4 rounded-xl font-bold hover:bg-blue-100 transition-colors flex items-center justify-center gap-2 border border-blue-200/50"
                  >
-                   <HardDrive className="w-5 h-5" /> Restore Backup
+                   <Cloud className="w-5 h-5" /> Restore Backup
                  </motion.button>
                </div>
                
@@ -209,7 +207,7 @@ export default function Settings() {
                   {confirmAction === 'attempts' && 'Clear Attempt History?'}
                 </h3>
                 <p className="text-sm text-slate-500 mt-2 leading-relaxed">
-                  {confirmAction === 'all' && 'Are you sure you want to permanently delete all test papers, attempts, and cached SQLite database files?'}
+                  {confirmAction === 'all' && 'Are you sure you want to permanently delete all test papers, attempts, and cached data?'}
                   {confirmAction === 'tests' && 'Are you sure you want to remove all imported test papers and associated attempts?'}
                   {confirmAction === 'attempts' && 'Are you sure you want to clear your test score history and analytics?'}
                 </p>

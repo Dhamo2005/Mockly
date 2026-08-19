@@ -16,7 +16,7 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import { getAccessToken, useAuth } from '../contexts/AuthContext';
-import { saveSQLiteToDrive } from '../lib/sqliteDriveSync';
+import { saveToFirestore } from '../lib/firebaseSync';
 
 export default function MockTestInterface() {
   const { user } = useAuth();
@@ -34,7 +34,7 @@ export default function MockTestInterface() {
     activeTestSessions, 
     updateActiveTestSession, 
     clearActiveTestSession,
-    driveSyncStatus 
+    syncStatus 
   } = useStore();
   
   const test = tests.find(t => t.id === testId);
@@ -160,8 +160,7 @@ export default function MockTestInterface() {
     try {
       localStorage.setItem('mockly_active_session_' + testId, JSON.stringify(sessionData));
     } catch (e) {}
-    const token = getAccessToken();
-    saveSQLiteToDrive(token, useStore.getState(), false);
+    if (user) saveToFirestore(user.uid, useStore.getState());
   };
 
   // Restore session on mount or refresh using exact timestamps
@@ -378,8 +377,7 @@ export default function MockTestInterface() {
         localStorage.setItem('mockly_active_session_' + testId, JSON.stringify(initialSessionData));
       } catch (e) {}
 
-      const token = getAccessToken();
-      saveSQLiteToDrive(token, useStore.getState(), true);
+      if (user) saveToFirestore(user.uid, useStore.getState());
     }
 
     isLoadedRef.current = true;
@@ -629,8 +627,7 @@ export default function MockTestInterface() {
     isPausedRef.current = false;
     setShowConfirm(null);
 
-    const token = getAccessToken();
-    saveSQLiteToDrive(token, useStore.getState(), true);
+    if (user) saveToFirestore(user.uid, useStore.getState());
     setToastMessage("Test restarted fresh with full time.");
     setTimeout(() => setToastMessage(null), 3000);
   };
@@ -708,8 +705,7 @@ export default function MockTestInterface() {
         lastUpdated: Date.now()
       });
 
-      const token = getAccessToken();
-      saveSQLiteToDrive(token, useStore.getState(), false);
+      if (user) saveToFirestore(user.uid, useStore.getState());
     }
   };
 
@@ -750,8 +746,7 @@ export default function MockTestInterface() {
           endTime: sessionEndTimeRef.current,
           lastUpdated: Date.now()
         });
-        const token = getAccessToken();
-        saveSQLiteToDrive(token, useStore.getState(), false);
+        if (user) saveToFirestore(user.uid, useStore.getState());
       }
     }
   };
@@ -777,8 +772,7 @@ export default function MockTestInterface() {
         endTime: sessionEndTimeRef.current,
         lastUpdated: Date.now()
       });
-      const token = getAccessToken();
-      saveSQLiteToDrive(token, useStore.getState(), false);
+      if (user) saveToFirestore(user.uid, useStore.getState());
     }
     handleNext();
   };
@@ -807,8 +801,7 @@ export default function MockTestInterface() {
         endTime: sessionEndTimeRef.current,
         lastUpdated: Date.now()
       });
-      const token = getAccessToken();
-      saveSQLiteToDrive(token, useStore.getState(), false);
+      if (user) saveToFirestore(user.uid, useStore.getState());
     }
   };
 
@@ -852,8 +845,7 @@ export default function MockTestInterface() {
         endTime: sessionEndTimeRef.current,
         lastUpdated: Date.now()
       });
-      const token = getAccessToken();
-      saveSQLiteToDrive(token, useStore.getState(), false);
+      if (user) saveToFirestore(user.uid, useStore.getState());
     }
   };
   handleJumpToQuestionRef.current = handleJumpToQuestion;
@@ -906,8 +898,7 @@ export default function MockTestInterface() {
     
     addAttempt(attempt);
     if (testId) clearActiveTestSession(testId);
-    const token = getAccessToken();
-    saveSQLiteToDrive(token, useStore.getState(), true);
+    if (user) saveToFirestore(user.uid, useStore.getState());
     navigate(`/review/${attempt.id}`);
   };
   handleSubmitRef.current = handleSubmit;
@@ -1213,8 +1204,7 @@ export default function MockTestInterface() {
                 onClick={() => {
                   setShowConfirm(null);
                   if (testId) clearActiveTestSession(testId);
-                  const token = getAccessToken();
-                  saveSQLiteToDrive(token, useStore.getState(), true);
+                  if (user) saveToFirestore(user.uid, useStore.getState());
                   navigate(`/test-details/${test.id}`);
                 }}
                 className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg text-sm transition-colors"
@@ -1317,11 +1307,11 @@ export default function MockTestInterface() {
         
         <div className="flex items-center justify-end gap-2 sm:gap-3 w-1/3 shrink-0">
           <div className="hidden sm:flex items-center px-1.5 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-500 whitespace-nowrap" title="Save Status">
-            {driveSyncStatus === 'saving' && <span className="text-blue-600 flex items-center gap-1"><RefreshCw className="w-3 h-3 animate-spin"/> Saving...</span>}
-            {driveSyncStatus === 'synced' && <span className="text-green-600 flex items-center gap-1"><Cloud className="w-3 h-3"/> ✓ Saved</span>}
-            {driveSyncStatus === 'offline' && <span className="text-slate-600 flex items-center gap-1"><Check className="w-3 h-3"/> Saved</span>}
-            {driveSyncStatus === 'error' && <span className="text-red-600 flex items-center gap-1"><AlertCircle className="w-3 h-3"/> Error</span>}
-            {driveSyncStatus === 'idle' && <span className="flex items-center gap-1"><Check className="w-3 h-3"/> Saved</span>}
+            {syncStatus === 'saving' && <span className="text-blue-600 flex items-center gap-1"><RefreshCw className="w-3 h-3 animate-spin"/> Saving...</span>}
+            {syncStatus === 'synced' && <span className="text-green-600 flex items-center gap-1"><Cloud className="w-3 h-3"/> ✓ Saved</span>}
+            {syncStatus === 'offline' && <span className="text-slate-600 flex items-center gap-1"><Check className="w-3 h-3"/> Saved</span>}
+            {syncStatus === 'error' && <span className="text-red-600 flex items-center gap-1"><AlertCircle className="w-3 h-3"/> Error</span>}
+            {syncStatus === 'idle' && <span className="flex items-center gap-1"><Check className="w-3 h-3"/> Saved</span>}
           </div>
 
           <div className={cn("font-mono font-bold text-sm sm:text-base px-2 py-0.5 rounded whitespace-nowrap", timeLeft < 60 ? "bg-red-100 text-red-700" : timeLeft < 300 ? "bg-orange-100 text-orange-700" : "bg-slate-100 text-slate-700")}>

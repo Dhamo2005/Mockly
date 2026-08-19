@@ -39,7 +39,7 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
 
           <h1 className="text-3xl font-black text-slate-800 tracking-tight">Mockly</h1>
           <p className="text-slate-500 text-sm mt-3 leading-relaxed">
-            Please sign in with Google to access mock tests, import custom test papers, and sync your progress securely with Google Drive.
+            Please sign in with Google to access mock tests, import custom test papers, and sync your progress securely with Firebase.
           </p>
 
           {authError && (
@@ -115,8 +115,8 @@ const Sidebar = () => {
   ];
 
   return (
-    <aside className="w-[220px] bg-white border-r border-slate-100 flex flex-col hidden md:flex shrink-0 z-10 relative shadow-[1px_0_15px_rgba(0,0,0,0.02)]">
-      <nav className="flex-1 py-6 px-4 space-y-2" aria-label="Main Navigation">
+    <aside className="w-[200px] bg-white border-r border-slate-200 flex flex-col hidden md:flex shrink-0 z-10 relative">
+      <nav className="flex-1 py-4 px-2 space-y-1" aria-label="Main Navigation">
         {navItems.map((item) => (
           <Link
             key={item.path}
@@ -125,20 +125,20 @@ const Sidebar = () => {
             className="block outline-none"
           >
             <motion.div
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              className={`group flex items-center gap-3 px-3 py-3 rounded-2xl font-medium transition-all duration-300 focus-visible:ring-2 focus-visible:ring-blue-500 ${
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.99 }}
+              className={`group flex items-center gap-2.5 px-3 py-2 rounded-lg font-medium transition-all duration-300 focus-visible:ring-2 focus-visible:ring-blue-500 ${
                 isActive(item.path)
-                  ? 'bg-blue-50 text-blue-600 shadow-sm'
-                  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+                  ? 'bg-blue-50/80 text-blue-700 shadow-xs border border-blue-100/50'
+                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 border border-transparent'
               }`}
             >
-              <item.icon className={`h-4 w-4 transition-transform duration-300 ${isActive(item.path) ? 'scale-110' : 'group-hover:scale-110 group-hover:text-blue-500'}`} />
-              <span className="text-sm tracking-wide">{item.label}</span>
+              <item.icon className={`h-4 w-4 transition-transform duration-300 ${isActive(item.path) ? 'scale-105' : 'group-hover:scale-105 group-hover:text-blue-500'}`} />
+              <span className="text-sm tracking-tight">{item.label}</span>
               {isActive(item.path) && (
                 <motion.div 
                   layoutId="sidebar-active"
-                  className="absolute left-0 w-1 h-8 bg-blue-500 rounded-r-full"
+                  className="absolute left-0 w-[3px] h-6 bg-blue-600 rounded-r-full"
                   transition={{ type: "spring", stiffness: 300, damping: 30 }}
                 />
               )}
@@ -202,8 +202,8 @@ const AppLayout = ({ children }: { children: React.ReactNode }) => {
       <Header />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
-        <main className="flex-1 flex flex-col min-w-0 bg-slate-50 md:rounded-tl-[32px] overflow-hidden relative">
-          <div className="flex-1 google-main-stage px-3 py-3 md:p-8 pb-20 md:pb-8 overflow-y-auto">
+        <main className="flex-1 flex flex-col min-w-0 bg-[#f8fafc] overflow-hidden relative border-l border-slate-200/50">
+          <div className="flex-1 px-3 py-4 md:px-6 md:py-6 pb-20 md:pb-6 overflow-y-auto custom-scrollbar">
             {children}
           </div>
         </main>

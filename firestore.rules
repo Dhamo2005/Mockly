@@ -1,0 +1,102 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} { 
+      allow read, write: if false; 
+    }
+
+    // Primitive Helpers
+    function isValidId(id) { 
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+    }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isSignedIn() { return request.auth != null && request.auth.token.email_verified == true; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+
+    // Entities Validation
+    function isValidUserData(data) {
+      return data.keys().hasAll([]) 
+        && data.keys().size() <= 2
+        && (!('bookmarks' in data) || (data.bookmarks is list && data.bookmarks.size() <= 1000))
+        && (!('language' in data) || (data.language is string && data.language.size() <= 10));
+    }
+
+    function isValidTest(data) {
+      return data.keys().hasAll(['id', 'title', 'timeLimit', 'ownerId'])
+        && data.id is string && data.id.size() <= 128
+        && data.title is string && data.title.size() <= 200
+        && data.timeLimit is number && data.timeLimit > 0
+        && data.ownerId is string && data.ownerId == request.auth.uid
+        && (!('description' in data) || (data.description is string && data.description.size() <= 2000))
+        && (!('themeColor' in data) || (data.themeColor is string && data.themeColor.size() <= 20))
+        && (!('examCategory' in data) || (data.examCategory is string && data.examCategory.size() <= 100));
+    }
+
+    function isValidAttempt(data, userId) {
+      return data.keys().hasAll(['id', 'testId', 'startTime', 'completed', 'totalQuestions', 'userId'])
+        && data.id is string && data.id.size() <= 128
+        && data.testId is string && data.testId.size() <= 128
+        && data.startTime is number
+        && data.completed is bool
+        && data.totalQuestions is number
+        && data.userId is string && data.userId == userId
+        && (!('endTime' in data) || data.endTime is number)
+        && (!('score' in data) || data.score is number)
+        && (!('correctAnswers' in data) || data.correctAnswers is number)
+        && (!('incorrectAnswers' in data) || data.incorrectAnswers is number);
+    }
+
+    function isValidActiveSession(data, userId) {
+      return data.keys().hasAll(['testId', 'currentQuestionIndex', 'timeLeft', 'isPaused', 'lastUpdated', 'userId'])
+        && data.testId is string && data.testId.size() <= 128
+        && data.currentQuestionIndex is number
+        && data.timeLeft is number
+        && data.isPaused is bool
+        && data.lastUpdated is number
+        && data.userId is string && data.userId == userId;
+    }
+
+    // Rules
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow list: if isOwner(userId); // list filtered by userId
+      allow create: if isOwner(userId) && isValidId(userId) && isValidUserData(incoming());
+      allow update: if isOwner(userId) && isValidId(userId) && isValidUserData(incoming());
+      allow delete: if isOwner(userId);
+
+      match /attempts/{attemptId} {
+        allow get: if isOwner(userId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(attemptId) && isValidAttempt(incoming(), userId);
+        allow update: if isOwner(userId) && isValidId(attemptId) && isValidAttempt(incoming(), userId)
+          && incoming().testId == existing().testId
+          && incoming().startTime == existing().startTime
+          && incoming().userId == existing().userId;
+        allow delete: if isOwner(userId);
+      }
+
+      match /activeSessions/{testId} {
+        allow get: if isOwner(userId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(testId) && isValidActiveSession(incoming(), userId);
+        allow update: if isOwner(userId) && isValidId(testId) && isValidActiveSession(incoming(), userId)
+          && incoming().testId == existing().testId
+          && incoming().userId == existing().userId;
+        allow delete: if isOwner(userId);
+      }
+    }
+
+    match /tests/{testId} {
+      // Anyone authenticated can read global tests
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(testId) && isValidTest(incoming());
+      allow update: if isSignedIn() && isValidId(testId) && existing().ownerId == request.auth.uid && isValidTest(incoming())
+        && incoming().ownerId == existing().ownerId
+        && incoming().id == existing().id;
+      allow delete: if isSignedIn() && existing().ownerId == request.auth.uid;
+    }
+  }
+}

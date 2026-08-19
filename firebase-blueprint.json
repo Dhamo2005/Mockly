@@ -1,0 +1,82 @@
+{
+  "entities": {
+    "Test": {
+      "title": "Test",
+      "description": "A mock test containing questions and sections.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "timeLimit": { "type": "number" },
+        "themeColor": { "type": "string" },
+        "examCategory": { "type": "string" },
+        "ownerId": { "type": "string" }
+      },
+      "required": ["id", "title", "timeLimit", "ownerId"]
+    },
+    "Attempt": {
+      "title": "Test Attempt",
+      "description": "A user's past attempt of a test.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "testId": { "type": "string" },
+        "startTime": { "type": "number" },
+        "endTime": { "type": "number" },
+        "completed": { "type": "boolean" },
+        "score": { "type": "number" },
+        "totalQuestions": { "type": "number" },
+        "correctAnswers": { "type": "number" },
+        "incorrectAnswers": { "type": "number" },
+        "userId": { "type": "string" }
+      },
+      "required": ["id", "testId", "startTime", "completed", "totalQuestions", "userId"]
+    },
+    "ActiveSession": {
+      "title": "Active Test Session",
+      "description": "An ongoing test session.",
+      "type": "object",
+      "properties": {
+        "testId": { "type": "string" },
+        "currentQuestionIndex": { "type": "number" },
+        "timeLeft": { "type": "number" },
+        "isPaused": { "type": "boolean" },
+        "lastUpdated": { "type": "number" },
+        "userId": { "type": "string" }
+      },
+      "required": ["testId", "currentQuestionIndex", "timeLeft", "isPaused", "lastUpdated", "userId"]
+    },
+    "UserData": {
+      "title": "User Data",
+      "description": "User specific simple preferences and bookmarks.",
+      "type": "object",
+      "properties": {
+        "bookmarks": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "language": { "type": "string" }
+      },
+      "required": []
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": { "$ref": "#/entities/UserData" },
+      "description": "User preferences and bookmarks"
+    },
+    "tests/{testId}": {
+      "schema": { "$ref": "#/entities/Test" },
+      "description": "Global or user-created mock tests."
+    },
+    "users/{userId}/attempts/{attemptId}": {
+      "schema": { "$ref": "#/entities/Attempt" },
+      "description": "User's test attempts."
+    },
+    "users/{userId}/activeSessions/{testId}": {
+      "schema": { "$ref": "#/entities/ActiveSession" },
+      "description": "User's active test sessions."
+    }
+  }
+}
