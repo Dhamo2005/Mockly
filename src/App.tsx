@@ -13,8 +13,11 @@ import SettingsPage from './pages/Settings';
 import { motion } from 'motion/react';
 import { useAuth } from './contexts/AuthContext';
 
+import firebaseConfig from '../firebase-applet-config.json';
+
 const AuthGuard = ({ children }: { children: React.ReactNode }) => {
   const { user, loading, isSigningIn, authError, signInWithGoogle } = useAuth();
+  const projectId = firebaseConfig?.projectId || 'your-firebase-project';
 
   if (loading) {
     return (
@@ -61,7 +64,7 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
                 </button>
               </div>
               <p className="text-[11px] text-amber-700">
-                1. Go to <a href="https://console.firebase.google.com/project/mockly-6950a/authentication/settings" target="_blank" rel="noreferrer" className="underline font-bold text-amber-900 hover:text-amber-950">Firebase Console &gt; Authentication &gt; Settings &gt; Authorized domains</a>.<br />
+                1. Go to <a href={`https://console.firebase.google.com/project/${projectId}/authentication/settings`} target="_blank" rel="noreferrer" className="underline font-bold text-amber-900 hover:text-amber-950">Firebase Console &gt; Authentication &gt; Settings &gt; Authorized domains</a>.<br />
                 2. Click <strong>Add domain</strong> and paste <code>{window.location.hostname}</code>.<br />
                 3. Click <strong>Save</strong> and retry signing in.
               </p>
