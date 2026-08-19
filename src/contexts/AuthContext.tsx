@@ -8,7 +8,7 @@ import { useStore } from '../store/useStore';
 
 export const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
 // Initialize Firebase Analytics if supported in current environment
 export let analytics: any = null;
