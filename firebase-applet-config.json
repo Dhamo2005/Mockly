@@ -1,11 +1,11 @@
 {
-  "projectId": "practical-beaker-g6pck",
-  "appId": "1:420634453219:web:e78694b433bc6e2f3e11d6",
-  "apiKey": "AIzaSyCBuEe4mlAimad_EJR4YEiO025cgFfSQlU",
-  "authDomain": "practical-beaker-g6pck.firebaseapp.com",
-  "storageBucket": "practical-beaker-g6pck.firebasestorage.app",
-  "messagingSenderId": "420634453219",
-  "measurementId": "",
-  "oAuthClientId": "420634453219-rair58hugf2uvdoo78ien8b91bu88po8.apps.googleusercontent.com",
+  "projectId": "mockly-6950a",
+  "appId": "1:283792158322:web:de844a52cddf5d26561ceb",
+  "apiKey": "AIzaSyDp1tj4Z5Sv-VOXiGIUPiVlkk3qUEI2zg0",
+  "authDomain": "mockly-6950a.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "mockly-6950a.firebasestorage.app",
+  "messagingSenderId": "283792158322",
+  "measurementId": "G-P14ZKESSM1",
   "recaptchaSiteKey": ""
 }

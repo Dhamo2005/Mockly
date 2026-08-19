@@ -1,12 +1,25 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged } from 'firebase/auth';
+import { getAnalytics, isSupported } from 'firebase/analytics';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { useStore } from '../store/useStore';
 import { resetLocalSQLiteDatabase } from '../lib/sqliteDriveSync';
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
+export const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+export const auth = getAuth(app);
+
+// Initialize Firebase Analytics if supported in current environment
+export let analytics: any = null;
+if (typeof window !== 'undefined') {
+  isSupported().then(supported => {
+    if (supported) {
+      analytics = getAnalytics(app);
+    }
+  }).catch(() => {
+    // Analytics not supported in this environment
+  });
+}
 
 const provider = new GoogleAuthProvider();
 provider.addScope('https://www.googleapis.com/auth/drive.appdata');
