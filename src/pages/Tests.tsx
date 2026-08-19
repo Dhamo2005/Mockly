@@ -2,13 +2,14 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '../store/useStore';
 import { useNavigate } from 'react-router-dom';
-import { PlayCircle, Globe, DownloadCloud, Trash2, BookOpen, Clock, AlignLeft, AlarmClock, Database } from 'lucide-react';
+import { PlayCircle, Globe, DownloadCloud, Trash2, BookOpen, Clock, AlignLeft, AlarmClock, Database, ArrowLeftRight } from 'lucide-react';
 import { Ripple } from '../components/Ripple';
 import { motion, AnimatePresence } from 'motion/react';
+import { cn } from '../lib/utils';
 import QuestionBank from './QuestionBank';
 
 export default function Tests() {
-  const { tests, deleteTest } = useStore();
+  const { tests, deleteTest, activeTestSessions } = useStore();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'imported' | 'online'>('imported');
   const [testToDelete, setTestToDelete] = useState<{ id: string; title: string } | null>(null);
@@ -137,10 +138,22 @@ export default function Tests() {
                           </span>
                         );
                       })()}
-                      {test.settings?.strictSectionalTiming && (
+                      {test.settings?.strictSectionalTiming && !test.settings?.allowSectionSwitching && (
                         <span className="flex items-center gap-1.5 text-xs font-semibold text-orange-700 bg-orange-50 px-3 py-1.5 rounded-full border border-orange-200 whitespace-nowrap" title="Strict Sectional Timing Enabled">
                           <AlarmClock className="w-3.5 h-3.5 text-orange-500" />
                           Strict Timing
+                        </span>
+                      )}
+                      {test.settings?.allowSectionSwitching && (
+                        <span className="flex items-center gap-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-full border border-indigo-200 whitespace-nowrap" title="Free Section Switching Allowed (Sectional Timer OFF)">
+                          <ArrowLeftRight className="w-3.5 h-3.5 text-indigo-500" />
+                          Switch Sections
+                        </span>
+                      )}
+                      {activeTestSessions && activeTestSessions[test.id] && (
+                        <span className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 bg-amber-50 px-3 py-1.5 rounded-full border border-amber-200 whitespace-nowrap" title="In Progress Attempt Saved">
+                          <Clock className="w-3.5 h-3.5 text-amber-500" />
+                          In Progress
                         </span>
                       )}
                     </div>
@@ -149,9 +162,14 @@ export default function Tests() {
                   <div className="mt-4 md:mt-6 pt-4 border-t border-slate-50">
                     <button
                       onClick={() => navigate(`/test-details/${test.id}`)}
-                      className="relative overflow-hidden w-full flex items-center justify-center gap-2 bg-slate-800 text-white px-4 py-2.5 md:px-6 md:py-3 rounded-xl hover:bg-slate-900 transition-colors font-bold text-sm shadow-sm"
+                      className={cn(
+                        "relative overflow-hidden w-full flex items-center justify-center gap-2 px-4 py-2.5 md:px-6 md:py-3 rounded-xl transition-colors font-bold text-sm shadow-sm",
+                        activeTestSessions && activeTestSessions[test.id]
+                          ? "bg-amber-600 hover:bg-amber-700 text-white"
+                          : "bg-slate-800 hover:bg-slate-900 text-white"
+                      )}
                     >
-                      Start Preparation
+                      {activeTestSessions && activeTestSessions[test.id] ? "Resume / Test Details" : "Start Preparation"}
                       <Ripple color="bg-white/20" />
                     </button>
                   </div>

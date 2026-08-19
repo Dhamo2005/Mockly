@@ -135,13 +135,20 @@ function createTables() {
       currentQuestionIndex INTEGER,
       currentSectionIndex INTEGER,
       sectionTimeLeft TEXT,
+      sectionDurations TEXT,
+      sectionStartTimes TEXT,
+      sectionEndTimes TEXT,
       answers TEXT,
       statuses TEXT,
       timeLeft INTEGER,
       timeSpent TEXT,
       isPaused INTEGER,
       reportedQuestions TEXT,
-      lastUpdated INTEGER
+      lastUpdated INTEGER,
+      startTime INTEGER,
+      endTime INTEGER,
+      scheduledStartTime INTEGER,
+      scheduledEndTime INTEGER
     );
     CREATE TABLE IF NOT EXISTS bookmarks (
       questionId TEXT PRIMARY KEY,
@@ -159,6 +166,13 @@ function createTables() {
   try { db.run(`ALTER TABLE tests ADD COLUMN scoring TEXT`); } catch (e) {}
   try { db.run(`ALTER TABLE active_test_sessions ADD COLUMN currentSectionIndex INTEGER`); } catch (e) {}
   try { db.run(`ALTER TABLE active_test_sessions ADD COLUMN sectionTimeLeft TEXT`); } catch (e) {}
+  try { db.run(`ALTER TABLE active_test_sessions ADD COLUMN sectionDurations TEXT`); } catch (e) {}
+  try { db.run(`ALTER TABLE active_test_sessions ADD COLUMN sectionStartTimes TEXT`); } catch (e) {}
+  try { db.run(`ALTER TABLE active_test_sessions ADD COLUMN sectionEndTimes TEXT`); } catch (e) {}
+  try { db.run(`ALTER TABLE active_test_sessions ADD COLUMN startTime INTEGER`); } catch (e) {}
+  try { db.run(`ALTER TABLE active_test_sessions ADD COLUMN endTime INTEGER`); } catch (e) {}
+  try { db.run(`ALTER TABLE active_test_sessions ADD COLUMN scheduledStartTime INTEGER`); } catch (e) {}
+  try { db.run(`ALTER TABLE active_test_sessions ADD COLUMN scheduledEndTime INTEGER`); } catch (e) {}
 }
 
 export function loadStateFromDB() {
@@ -222,7 +236,7 @@ export function loadStateFromDB() {
       sessionsRes[0].values.forEach((row: any[]) => {
         const sess: any = {};
         cols.forEach((col, i) => {
-          if (['answers', 'statuses', 'timeSpent', 'reportedQuestions', 'sectionTimeLeft'].includes(col)) {
+          if (['answers', 'statuses', 'timeSpent', 'reportedQuestions', 'sectionTimeLeft', 'sectionDurations', 'sectionStartTimes', 'sectionEndTimes'].includes(col)) {
             sess[col] = row[i] ? JSON.parse(row[i]) : {};
           } else if (col === 'isPaused') {
             sess[col] = row[i] === 1;
@@ -231,7 +245,14 @@ export function loadStateFromDB() {
           }
         });
         if (sess.testId) {
-          state.activeTestSessions[sess.testId] = sess;
+          // Check if session was already completed and saved as attempt
+          const alreadySubmitted = state.attempts.some((a: any) => 
+            a.testId === sess.testId && a.completed
+          );
+
+          if (!alreadySubmitted) {
+            state.activeTestSessions[sess.testId] = sess;
+          }
         }
       });
     }
@@ -255,6 +276,8 @@ export function saveStateToDB(state: any) {
   if (!db) return;
 
   try {
+    db.run('BEGIN TRANSACTION;');
+    
     db.run(`
       DELETE FROM tests;
       DELETE FROM test_sections;
@@ -392,7 +415,7 @@ export function saveStateToDB(state: any) {
 
     // 4. Active Test Sessions
     if (state.activeTestSessions) {
-      const stmt = db.prepare(`INSERT INTO active_test_sessions (testId, currentQuestionIndex, currentSectionIndex, sectionTimeLeft, answers, statuses, timeLeft, timeSpent, isPaused, reportedQuestions, lastUpdated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+      const stmt = db.prepare(`INSERT INTO active_test_sessions (testId, currentQuestionIndex, currentSectionIndex, sectionTimeLeft, sectionDurations, sectionStartTimes, sectionEndTimes, answers, statuses, timeLeft, timeSpent, isPaused, reportedQuestions, lastUpdated, startTime, endTime, scheduledStartTime, scheduledEndTime) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
       for (const [tId, sess] of Object.entries<any>(state.activeTestSessions)) {
         if (!sess) continue;
         stmt.run([
@@ -400,13 +423,20 @@ export function saveStateToDB(state: any) {
           sess.currentQuestionIndex || 0,
           sess.currentSectionIndex || 0,
           JSON.stringify(sess.sectionTimeLeft || {}),
+          JSON.stringify(sess.sectionDurations || {}),
+          JSON.stringify(sess.sectionStartTimes || {}),
+          JSON.stringify(sess.sectionEndTimes || {}),
           JSON.stringify(sess.answers || {}),
           JSON.stringify(sess.statuses || {}),
           sess.timeLeft || 0,
           JSON.stringify(sess.timeSpent || {}),
           sess.isPaused ? 1 : 0,
           JSON.stringify(sess.reportedQuestions || {}),
-          sess.lastUpdated || Date.now()
+          sess.lastUpdated || Date.now(),
+          sess.startTime || Date.now(),
+          sess.endTime || (Date.now() + 3600 * 1000),
+          sess.scheduledStartTime || null,
+          sess.scheduledEndTime || null
         ]);
       }
       stmt.free();
@@ -422,7 +452,10 @@ export function saveStateToDB(state: any) {
       }
       stmt.free();
     }
+    
+    db.run('COMMIT;');
   } catch (err) {
+    db.run('ROLLBACK;');
     console.error('Error saving state to SQLite database:', err);
   }
 }
@@ -501,6 +534,15 @@ export async function loadSQLiteFromDrive(token: string | null) {
         createTables();
         const state = loadStateFromDB();
         if (state && (state.tests?.length > 0 || state.attempts?.length > 0)) {
+          const currentStore = useStore.getState();
+          const existingSessions = currentStore.activeTestSessions || {};
+          const mergedSessions = { ...(state.activeTestSessions || {}) };
+          for (const [tId, s] of Object.entries(existingSessions)) {
+            if (!mergedSessions[tId] || (s.lastUpdated || 0) >= (mergedSessions[tId].lastUpdated || 0)) {
+              mergedSessions[tId] = s;
+            }
+          }
+          state.activeTestSessions = mergedSessions;
           useStore.setState(state);
         }
       } catch (e) {
@@ -529,6 +571,15 @@ export async function loadSQLiteFromDrive(token: string | null) {
               createTables();
               const state = loadStateFromDB();
               if (state) {
+                const currentStore = useStore.getState();
+                const existingSessions = currentStore.activeTestSessions || {};
+                const mergedSessions = { ...(state.activeTestSessions || {}) };
+                for (const [tId, s] of Object.entries(existingSessions)) {
+                  if (!mergedSessions[tId] || (s.lastUpdated || 0) >= (mergedSessions[tId].lastUpdated || 0)) {
+                    mergedSessions[tId] = s;
+                  }
+                }
+                state.activeTestSessions = mergedSessions;
                 useStore.setState(state);
                 const data = db.export();
                 await saveSQLiteToIDB(data);
@@ -571,9 +622,22 @@ export async function loadSQLiteFromDrive(token: string | null) {
   }
 }
 
+let localSaveTimeout: any;
 let syncTimeout: any;
 let isSyncing = false;
 let needsSync = false;
+
+// Global online listener to auto-sync when connection restores
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    const token = (window as any).__googleAccessToken;
+    if (token) {
+      saveSQLiteToDrive(token, useStore.getState(), true);
+    }
+  });
+}
+
+let driveSyncDisabled = false;
 
 export async function saveSQLiteToDrive(token: string | null, state: any, immediate = false) {
   try {
@@ -583,39 +647,64 @@ export async function saveSQLiteToDrive(token: string | null, state: any, immedi
       createTables();
     }
     
-    // 1. Always update SQLite DB in memory and persist binary to IndexedDB locally
-    saveStateToDB(state);
-    const binaryData = db.export();
-    await saveSQLiteToIDB(binaryData);
+    const performLocalExport = async (currentState: any) => {
+      try {
+        saveStateToDB(currentState);
+        const binaryData = db!.export();
+        await saveSQLiteToIDB(binaryData);
+      } catch (e) {
+        console.warn('IDB export failed:', e);
+      }
+    };
+
+    // Fast local IndexedDB writes
+    if (immediate) {
+      if (localSaveTimeout) clearTimeout(localSaveTimeout);
+      await performLocalExport(state);
+    } else {
+      if (localSaveTimeout) clearTimeout(localSaveTimeout);
+      localSaveTimeout = setTimeout(async () => {
+        localSaveTimeout = null;
+        await performLocalExport(useStore.getState());
+      }, 500);
+    }
 
     // 2. If Google token is provided, sync SQLite file to Google Drive
-    if (!token) return;
+    if (!token || driveSyncDisabled) return;
+
     
+    // Store token globally for online recovery
+    if (typeof window !== 'undefined') {
+      (window as any).__googleAccessToken = token;
+    }
+
     if (isSyncing) {
       needsSync = true;
       return;
     }
 
-    if (syncTimeout) clearTimeout(syncTimeout);
-
     const performSync = async () => {
       isSyncing = true;
       needsSync = false;
+      useStore.getState().setDriveSyncStatus('saving');
+
       try {
         const latestBinaryData = db!.export();
         const file = new Blob([latestBinaryData], { type: 'application/x-sqlite3' });
         const folderId = await getOrCreateFolder(token);
         if (!folderId) {
           isSyncing = false;
+          useStore.getState().setDriveSyncStatus('offline');
           return;
         }
         let fileId = await findFileId(token, folderId);
         
+        let response: Response;
         if (fileId) {
           const form = new FormData();
           form.append('metadata', new Blob([JSON.stringify({ name: FILE_NAME })], { type: 'application/json' }));
           form.append('file', file);
-          await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`, {
+          response = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`, {
             method: 'PATCH',
             headers: { Authorization: `Bearer ${token}` },
             body: form,
@@ -625,15 +714,22 @@ export async function saveSQLiteToDrive(token: string | null, state: any, immedi
           const form = new FormData();
           form.append('metadata', new Blob([JSON.stringify({ name: FILE_NAME, parents: [folderId] })], { type: 'application/json' }));
           form.append('file', file);
-          await fetch(`https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart`, {
+          response = await fetch(`https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart`, {
             method: 'POST',
             headers: { Authorization: `Bearer ${token}` },
             body: form,
             keepalive: immediate
           });
         }
+
+        if (response.ok) {
+          useStore.getState().setDriveSyncStatus('synced', Date.now());
+        } else {
+          useStore.getState().setDriveSyncStatus('offline');
+        }
       } catch (e) {
         console.warn('Google Drive sync skipped (network/offline):', e);
+        useStore.getState().setDriveSyncStatus('offline');
       } finally {
         isSyncing = false;
         if (needsSync) {
@@ -642,10 +738,16 @@ export async function saveSQLiteToDrive(token: string | null, state: any, immedi
       }
     };
 
+    // Debounce Google Drive uploads: 1200ms on continuous typing/selection, instant on immediate
     if (immediate) {
+      if (syncTimeout) clearTimeout(syncTimeout);
       performSync();
     } else {
-      syncTimeout = setTimeout(performSync, 1500);
+      if (syncTimeout) clearTimeout(syncTimeout);
+      syncTimeout = setTimeout(() => {
+        syncTimeout = null;
+        performSync();
+      }, 1200);
     }
   } catch (e) {
     console.warn('Failed to save state to local SQLite database:', e);

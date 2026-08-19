@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Test } from '../types';
-import { Award, Check, ShieldCheck, ShieldAlert, Sparkles, Sliders, X, Clock } from 'lucide-react';
+import { Award, Check, ShieldCheck, ShieldAlert, Sparkles, Sliders, X, Clock, ArrowLeftRight, Calendar } from 'lucide-react';
 
 export interface ExamPreset {
   id: string;
@@ -75,6 +75,10 @@ export function ExamPersonalityModal({ isOpen, onClose, test, onSave }: ExamPers
   const [positiveMarks, setPositiveMarks] = useState<number>(1.0);
   const [negativeMarks, setNegativeMarks] = useState<number>(0.25);
   const [strictSectionalTiming, setStrictSectionalTiming] = useState<boolean>(false);
+  const [allowSectionSwitching, setAllowSectionSwitching] = useState<boolean>(false);
+  const [isScheduled, setIsScheduled] = useState<boolean>(false);
+  const [scheduledStartTime, setScheduledStartTime] = useState<string>('');
+  const [scheduledEndTime, setScheduledEndTime] = useState<string>('');
   const [sections, setSections] = useState<any[]>([]);
 
   useEffect(() => {
@@ -85,6 +89,24 @@ export function ExamPersonalityModal({ isOpen, onClose, test, onSave }: ExamPers
       setPositiveMarks(pos);
       setNegativeMarks(neg);
       setStrictSectionalTiming(test.settings?.strictSectionalTiming === true);
+      setAllowSectionSwitching(test.settings?.allowSectionSwitching === true || test.settings?.allowForceSkipSection === true);
+      setIsScheduled(test.settings?.isScheduled === true);
+      
+      if (test.settings?.scheduledStartTime) {
+        const d = new Date(test.settings.scheduledStartTime);
+        setScheduledStartTime(new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16));
+      } else {
+        const now = new Date();
+        setScheduledStartTime(new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16));
+      }
+
+      if (test.settings?.scheduledEndTime) {
+        const d = new Date(test.settings.scheduledEndTime);
+        setScheduledEndTime(new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16));
+      } else {
+        const end = new Date(Date.now() + (test.timeLimit || 3600) * 1000);
+        setScheduledEndTime(new Date(end.getTime() - end.getTimezoneOffset() * 60000).toISOString().slice(0, 16));
+      }
       
       let initialSections = test.sections || [];
       if (initialSections.length === 0 && test.questions && test.questions.length > 0) {
@@ -135,14 +157,51 @@ export function ExamPersonalityModal({ isOpen, onClose, test, onSave }: ExamPers
     }
   };
 
+  const handleToggleAllowSectionSwitching = () => {
+    const nextVal = !allowSectionSwitching;
+    setAllowSectionSwitching(nextVal);
+    if (nextVal) {
+      // If user enables switch between sections, turn off sectional timer
+      setStrictSectionalTiming(false);
+    }
+  };
+
+  const handleToggleStrictSectionalTiming = () => {
+    const nextVal = !strictSectionalTiming;
+    setStrictSectionalTiming(nextVal);
+    if (nextVal) {
+      // If user enables strict sectional timing, turn off free section switching
+      setAllowSectionSwitching(false);
+    }
+  };
+
   const handleSave = () => {
+    let parsedStartTime = isScheduled && scheduledStartTime ? new Date(scheduledStartTime).getTime() : undefined;
+    let parsedEndTime = isScheduled && scheduledEndTime ? new Date(scheduledEndTime).getTime() : undefined;
+
+    // If section switching is enabled, sectional timing is strictly false
+    const finalStrictSectionalTiming = allowSectionSwitching ? false : strictSectionalTiming;
+
+    let totalDuration = finalStrictSectionalTiming ? sections.reduce((acc, s) => acc + s.timeLimit, 0) : test.timeLimit;
+    if (isScheduled && parsedStartTime && parsedEndTime && parsedEndTime > parsedStartTime) {
+      totalDuration = Math.round((parsedEndTime - parsedStartTime) / 1000);
+    }
+
     onSave({
       examCategory: examCategory.trim() || 'General Exam',
       positiveMarks: Math.max(0.1, Number(positiveMarks) || 1.0),
       negativeMarks: Math.max(0, Number(negativeMarks) || 0),
-      settings: { ...test.settings, strictSectionalTiming },
+      settings: { 
+        ...test.settings, 
+        strictSectionalTiming: finalStrictSectionalTiming, 
+        allowSectionSwitching, 
+        allowForceSkipSection: allowSectionSwitching,
+        isScheduled,
+        scheduledStartTime: parsedStartTime,
+        scheduledEndTime: parsedEndTime
+      },
       sections: sections,
-      timeLimit: strictSectionalTiming ? sections.reduce((acc, s) => acc + s.timeLimit, 0) : test.timeLimit
+      timeLimit: totalDuration
     });
     onClose();
   };
@@ -267,8 +326,46 @@ export function ExamPersonalityModal({ isOpen, onClose, test, onSave }: ExamPers
             </div>
 
             
-            {/* Strict Sectional Timing Toggle */}
+            {/* Switch Between Sections Option */}
             <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                  allowSectionSwitching ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-500'
+                }`}>
+                  <ArrowLeftRight className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-slate-800">
+                    {allowSectionSwitching ? 'Free Section Switching (Sectional Timer OFF)' : 'Allow Switching Between Sections'}
+                  </h4>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {allowSectionSwitching 
+                      ? 'Candidates can freely switch between sections anytime. Sectional timer is turned OFF.' 
+                      : 'Toggle on to allow free jumping between sections (automatically turns off sectional timer).'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleToggleAllowSectionSwitching}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  allowSectionSwitching ? 'bg-indigo-600' : 'bg-slate-300'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    allowSectionSwitching ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* Strict Sectional Timing Toggle */}
+            <div className={`rounded-2xl p-4 border transition-all flex items-center justify-between ${
+              strictSectionalTiming 
+                ? 'bg-blue-50/70 border-blue-200' 
+                : 'bg-slate-50 border-slate-200'
+            }`}>
               <div className="flex items-center gap-3">
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
                   strictSectionalTiming ? 'bg-blue-100 text-blue-600' : 'bg-slate-200 text-slate-500'
@@ -280,13 +377,15 @@ export function ExamPersonalityModal({ isOpen, onClose, test, onSave }: ExamPers
                     {strictSectionalTiming ? 'Strict Sectional Timing Enabled' : 'Enable Strict Sectional Timing'}
                   </h4>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    {strictSectionalTiming ? 'Sections lock when time expires. No jumping back.' : 'Toggle on to enforce mandatory time limits per section.'}
+                    {strictSectionalTiming 
+                      ? 'Sections lock when time expires. Jumping back or switching is locked.' 
+                      : 'Enforce mandatory countdown time limits per section.'}
                   </p>
                 </div>
               </div>
               <button
                 type="button"
-                onClick={() => setStrictSectionalTiming(!strictSectionalTiming)}
+                onClick={handleToggleStrictSectionalTiming}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                   strictSectionalTiming ? 'bg-blue-600' : 'bg-slate-300'
                 }`}
@@ -333,6 +432,67 @@ export function ExamPersonalityModal({ isOpen, onClose, test, onSave }: ExamPers
                 </div>
               </div>
             )}
+
+            {/* Scheduled Test Window Configuration */}
+            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                    isScheduled ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-500'
+                  }`}>
+                    <Calendar className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-800">
+                      {isScheduled ? 'Scheduled Test Window Active' : 'Schedule Fixed Time Window (e.g. 1 PM - 2 PM)'}
+                    </h4>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Enforce strict absolute timestamps. The test auto-starts and auto-submits on schedule.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsScheduled(!isScheduled)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    isScheduled ? 'bg-amber-600' : 'bg-slate-300'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      isScheduled ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {isScheduled && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-slate-200/80">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
+                      Scheduled Start Time
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={scheduledStartTime}
+                      onChange={(e) => setScheduledStartTime(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-800 bg-white focus:border-amber-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
+                      Scheduled End Time
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={scheduledEndTime}
+                      onChange={(e) => setScheduledEndTime(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-800 bg-white focus:border-amber-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Custom Values Adjustment */}
             <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-4">

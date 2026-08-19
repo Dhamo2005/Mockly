@@ -1,9 +1,15 @@
 import { create } from 'zustand';
 import { Test, TestAttempt, Language, ActiveTestSession } from '../types';
 
+export type DriveSyncStatus = 'idle' | 'saving' | 'synced' | 'offline' | 'error';
+
 interface AppState {
   isInitialized: boolean;
   setIsInitialized: (val: boolean) => void;
+
+  driveSyncStatus: DriveSyncStatus;
+  lastSyncedAt: number | null;
+  setDriveSyncStatus: (status: DriveSyncStatus, lastSyncedAt?: number) => void;
 
   language: Language;
   setLanguage: (lang: Language) => void;
@@ -31,9 +37,29 @@ interface AppState {
   clearAllData: () => void;
 }
 
+function getInitialActiveSessions(): Record<string, ActiveTestSession> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem('mockly_active_test_sessions');
+    if (raw) {
+      return JSON.parse(raw);
+    }
+  } catch (e) {
+    console.warn('Error reading active sessions from localStorage', e);
+  }
+  return {};
+}
+
 export const useStore = create<AppState>()((set) => ({
   isInitialized: false,
   setIsInitialized: (val) => set({ isInitialized: val }),
+
+  driveSyncStatus: 'idle',
+  lastSyncedAt: null,
+  setDriveSyncStatus: (status, lastSyncedAt) => set((state) => ({
+    driveSyncStatus: status,
+    lastSyncedAt: lastSyncedAt !== undefined ? lastSyncedAt : (status === 'synced' ? Date.now() : state.lastSyncedAt)
+  })),
 
   language: 'en',
   setLanguage: (lang) => set({ language: lang }),
@@ -49,6 +75,11 @@ export const useStore = create<AppState>()((set) => ({
     
     const nextSessions = { ...state.activeTestSessions };
     delete nextSessions[id];
+
+    try {
+      localStorage.setItem('mockly_active_test_sessions', JSON.stringify(nextSessions));
+      localStorage.removeItem('mockly_active_session_' + id);
+    } catch (e) {}
 
     const nextBookmarks = { ...state.bookmarks };
     for (const key of Object.keys(nextBookmarks)) {
@@ -80,7 +111,7 @@ export const useStore = create<AppState>()((set) => ({
     attempts: state.attempts.filter((a) => a.id !== id)
   })),
 
-  activeTestSessions: {},
+  activeTestSessions: getInitialActiveSessions(),
   updateActiveTestSession: (testId, sessionData) => set((state) => {
     const existing = state.activeTestSessions[testId] || {
       testId,
@@ -94,20 +125,33 @@ export const useStore = create<AppState>()((set) => ({
       lastUpdated: Date.now()
     };
 
+    const updatedSession = {
+      ...existing,
+      ...sessionData,
+      lastUpdated: Date.now()
+    };
+
+    const nextSessions = {
+      ...state.activeTestSessions,
+      [testId]: updatedSession
+    };
+
+    try {
+      localStorage.setItem('mockly_active_test_sessions', JSON.stringify(nextSessions));
+      localStorage.setItem('mockly_active_session_' + testId, JSON.stringify(updatedSession));
+    } catch (e) {}
+
     return {
-      activeTestSessions: {
-        ...state.activeTestSessions,
-        [testId]: {
-          ...existing,
-          ...sessionData,
-          lastUpdated: Date.now()
-        }
-      }
+      activeTestSessions: nextSessions
     };
   }),
   clearActiveTestSession: (testId) => set((state) => {
     const next = { ...state.activeTestSessions };
     delete next[testId];
+    try {
+      localStorage.setItem('mockly_active_test_sessions', JSON.stringify(next));
+      localStorage.removeItem('mockly_active_session_' + testId);
+    } catch (e) {}
     return { activeTestSessions: next };
   }),
 
@@ -119,8 +163,23 @@ export const useStore = create<AppState>()((set) => ({
     }
   })),
 
-  clearAttempts: () => set({ attempts: [], activeTestSessions: {} }),
-  clearTests: () => set({ tests: [], attempts: [], activeTestSessions: {}, bookmarks: {} }),
-  clearAllData: () => set({ tests: [], attempts: [], activeTestSessions: {}, bookmarks: {} })
+  clearAttempts: () => {
+    try {
+      localStorage.removeItem('mockly_active_test_sessions');
+    } catch (e) {}
+    return set({ attempts: [], activeTestSessions: {} });
+  },
+  clearTests: () => {
+    try {
+      localStorage.removeItem('mockly_active_test_sessions');
+    } catch (e) {}
+    return set({ tests: [], attempts: [], activeTestSessions: {}, bookmarks: {} });
+  },
+  clearAllData: () => {
+    try {
+      localStorage.removeItem('mockly_active_test_sessions');
+    } catch (e) {}
+    return set({ tests: [], attempts: [], activeTestSessions: {}, bookmarks: {} });
+  }
 }));
 

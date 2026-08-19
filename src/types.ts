@@ -105,6 +105,11 @@ export interface MockTestSettings {
   showResultImmediately?: boolean;
   showCorrectAnswersAfterSubmit?: boolean;
   strictSectionalTiming?: boolean;
+  allowSectionSwitching?: boolean;
+  allowForceSkipSection?: boolean;
+  isScheduled?: boolean;
+  scheduledStartTime?: number; // ms timestamp
+  scheduledEndTime?: number;   // ms timestamp
 }
 
 export interface ExamMetadata {
@@ -195,6 +200,9 @@ export interface ActiveTestSession {
   currentQuestionIndex: number;
   currentSectionIndex?: number;
   sectionTimeLeft?: Record<number, number>;
+  sectionDurations?: Record<number, number>;
+  sectionStartTimes?: Record<number, number>;
+  sectionEndTimes?: Record<number, number>;
   answers: Record<string, string>;
   statuses: Record<string, QuestionStatus>;
   timeLeft: number;
@@ -202,6 +210,10 @@ export interface ActiveTestSession {
   isPaused: boolean;
   reportedQuestions?: Record<string, { reason: string; comment?: string }>;
   lastUpdated: number;
+  startTime?: number;
+  endTime?: number;
+  scheduledStartTime?: number;
+  scheduledEndTime?: number;
 }
 
 

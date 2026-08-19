@@ -2,7 +2,7 @@ import React, { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { useStore } from '../store/useStore';
-import { Upload, FileJson, Download, CheckCircle2, AlertCircle, Trash2, Database, ShieldCheck, Sliders, Sparkles, AlarmClock } from 'lucide-react';
+import { Upload, FileJson, Download, CheckCircle2, AlertCircle, Trash2, Database, ShieldCheck, Sliders, Sparkles, AlarmClock, ArrowLeftRight } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { Test, Question } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
@@ -27,7 +27,7 @@ export default function QuestionBank() {
       description: test.description,
       timeLimit: test.timeLimit,
       themeColor: test.themeColor || "#8b5cf6",
-      Sectionaltimer: test.settings?.strictSectionalTiming ? "true" : "false",
+      Sectionaltimer: (test.settings?.strictSectionalTiming && !test.settings?.allowSectionSwitching) ? "true" : "false",
       examCategory: test.examCategory,
       settings: test.settings,
       scoring: test.scoring,
@@ -454,10 +454,16 @@ export default function QuestionBank() {
                       }`}>
                         {isNoNeg ? 'No Negative Penalty' : `Scheme: +${pos.toFixed(1)} / -${neg.toFixed(2)}`}
                       </span>
-                      {test.settings?.strictSectionalTiming && (
+                      {test.settings?.strictSectionalTiming && !test.settings?.allowSectionSwitching && (
                         <span className="flex items-center gap-1 text-xs font-bold text-orange-700 bg-orange-50 px-2 py-0.5 rounded-full border border-orange-200" title="Strict Sectional Timing Enabled">
                           <AlarmClock className="w-3 h-3 text-orange-500" />
                           Strict Timing
+                        </span>
+                      )}
+                      {test.settings?.allowSectionSwitching && (
+                        <span className="flex items-center gap-1 text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200" title="Free Section Switching Allowed (Sectional Timer OFF)">
+                          <ArrowLeftRight className="w-3 h-3 text-indigo-500" />
+                          Switch Sections
                         </span>
                       )}
                     </div>

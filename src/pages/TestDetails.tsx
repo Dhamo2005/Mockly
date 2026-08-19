@@ -1,19 +1,31 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useStore } from '../store/useStore';
-import { PlayCircle, ArrowLeft, Clock, FileText, BarChart, ChevronRight, Trash2, Sliders, ShieldCheck, Sparkles, Download, AlarmClock } from 'lucide-react';
+import { PlayCircle, ArrowLeft, Clock, FileText, BarChart, ChevronRight, Trash2, Sliders, ShieldCheck, Sparkles, Download, AlarmClock, RotateCcw, Calendar, AlertCircle, ArrowLeftRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Ripple } from '../components/Ripple';
 import { ExamPersonalityModal } from '../components/ExamPersonalityModal';
+import { getAccessToken } from '../contexts/AuthContext';
+import { saveSQLiteToDrive } from '../lib/sqliteDriveSync';
 
 export default function TestDetails() {
   const { testId } = useParams();
   const navigate = useNavigate();
-  const { tests, attempts, deleteTest, deleteAttempt, updateTest } = useStore();
+  const { tests, attempts, deleteTest, deleteAttempt, updateTest, activeTestSessions, clearActiveTestSession } = useStore();
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [attemptToDelete, setAttemptToDelete] = useState<string | null>(null);
   const [showPersonalityModal, setShowPersonalityModal] = useState(false);
+  
+  // Real-time clock for scheduled countdowns
+  const [currentTime, setCurrentTime] = useState(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   
   
     const handleExportTest = () => {
@@ -24,7 +36,7 @@ export default function TestDetails() {
       description: test.description,
       timeLimit: test.timeLimit,
       themeColor: test.themeColor || "#8b5cf6",
-      Sectionaltimer: test.settings?.strictSectionalTiming ? "true" : "false",
+      Sectionaltimer: (test.settings?.strictSectionalTiming && !test.settings?.allowSectionSwitching) ? "true" : "false",
       examCategory: test.examCategory,
       settings: test.settings,
       scoring: test.scoring,
@@ -195,10 +207,16 @@ export default function TestDetails() {
                 {test.examCategory && (
                   <span className="px-2.5 py-1 bg-blue-50 text-[#2563EB] text-[12px] font-semibold rounded-md">{test.examCategory}</span>
                 )}
-                {test.settings?.strictSectionalTiming && (
+                {test.settings?.strictSectionalTiming && !test.settings?.allowSectionSwitching && (
                   <span className="flex items-center gap-1.5 px-2.5 py-1 bg-orange-50 text-orange-700 border border-orange-200 text-[12px] font-bold rounded-md" title="Strict Sectional Timing Enabled">
                     <AlarmClock className="w-3.5 h-3.5 text-orange-500" />
                     Strict Timing
+                  </span>
+                )}
+                {test.settings?.allowSectionSwitching && (
+                  <span className="flex items-center gap-1.5 px-2.5 py-1 bg-indigo-50 text-indigo-700 border border-indigo-200 text-[12px] font-bold rounded-md" title="Section Switching Allowed (Sectional Timer OFF)">
+                    <ArrowLeftRight className="w-3.5 h-3.5 text-indigo-500" />
+                    Switch Between Sections
                   </span>
                 )}
               </div>
@@ -233,19 +251,146 @@ export default function TestDetails() {
           <div className="w-full lg:w-1/3 xl:w-[32%] flex flex-col gap-6">
             
             {/* Start Action */}
-            <motion.div variants={itemVariants} className="bg-white p-5 rounded-[16px] shadow-sm border border-[#E7EBF2] flex flex-col">
-              <button
-                onClick={() => navigate(`/test/${test.id}`)}
-                className="relative overflow-hidden w-full h-[52px] rounded-[14px] bg-[#2563EB] text-white flex items-center justify-center gap-2 hover:bg-[#1D4ED8] transition-colors shadow-sm"
-              >
-                <PlayCircle className="w-[18px] h-[18px]" />
-                <span className="text-[15px] font-semibold tracking-wide">Start Mock Test</span>
-                <Ripple color="bg-white/20" />
-              </button>
+            <motion.div variants={itemVariants} className="bg-white p-5 rounded-[16px] shadow-sm border border-[#E7EBF2] flex flex-col gap-3">
+              {(() => {
+                const isScheduled = test.settings?.isScheduled === true && !!test.settings?.scheduledStartTime;
+                const scheduledStart = test.settings?.scheduledStartTime || 0;
+                const scheduledEnd = test.settings?.scheduledEndTime || (scheduledStart + (test.timeLimit || 3600) * 1000);
+                const isBefore = isScheduled && currentTime < scheduledStart;
+                const isEnded = isScheduled && currentTime >= scheduledEnd;
+
+                if (isBefore) {
+                  const msLeft = Math.max(0, scheduledStart - currentTime);
+                  const hours = Math.floor(msLeft / (1000 * 60 * 60));
+                  const mins = Math.floor((msLeft / (1000 * 60)) % 60);
+                  const secs = Math.floor((msLeft / 1000) % 60);
+                  const timeFormatted = `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+
+                  return (
+                    <div className="flex flex-col gap-3">
+                      <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 text-center">
+                        <div className="flex items-center justify-center gap-1.5 text-amber-600 font-bold text-xs uppercase tracking-wider mb-1">
+                          <Calendar className="w-3.5 h-3.5" />
+                          <span>Scheduled Mock Test</span>
+                        </div>
+                        <div className="text-xl font-mono font-black text-amber-700">
+                          {timeFormatted}
+                        </div>
+                        <div className="text-[11px] text-amber-800/80 mt-0.5">
+                          Opens automatically at {new Date(scheduledStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => navigate(`/test/${test.id}`)}
+                        className="relative overflow-hidden w-full h-[50px] rounded-[14px] bg-amber-500 text-white flex items-center justify-center gap-2 hover:bg-amber-600 transition-colors shadow-sm font-semibold text-[15px]"
+                      >
+                        <Clock className="w-[18px] h-[18px]" />
+                        <span>Enter Waiting Room</span>
+                        <Ripple color="bg-white/20" />
+                      </button>
+                    </div>
+                  );
+                }
+
+                if (isEnded) {
+                  return (
+                    <div className="flex flex-col gap-3">
+                      <div className="bg-slate-100 border border-slate-200 rounded-xl p-3.5 text-center">
+                        <div className="flex items-center justify-center gap-1.5 text-slate-600 font-bold text-xs uppercase tracking-wider mb-1">
+                          <AlertCircle className="w-3.5 h-3.5 text-slate-500" />
+                          <span>Scheduled Window Ended</span>
+                        </div>
+                        <p className="text-[12px] text-slate-500">
+                          This scheduled test closed on {new Date(scheduledEnd).toLocaleDateString()} at {new Date(scheduledEnd).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.
+                        </p>
+                      </div>
+
+                      {latestAttempt ? (
+                        <button
+                          onClick={() => navigate(`/result/${latestAttempt.id}`)}
+                          className="relative overflow-hidden w-full h-[50px] rounded-[14px] bg-emerald-600 text-white flex items-center justify-center gap-2 hover:bg-emerald-700 transition-colors shadow-sm font-semibold text-[15px]"
+                        >
+                          <BarChart className="w-[18px] h-[18px]" />
+                          <span>View Your Test Result</span>
+                          <Ripple color="bg-white/20" />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => navigate(`/test-answers/${test.id}`)}
+                          className="relative overflow-hidden w-full h-[50px] rounded-[14px] bg-blue-600 text-white flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors shadow-sm font-semibold text-[15px]"
+                        >
+                          <FileText className="w-[18px] h-[18px]" />
+                          <span>View Answer Key</span>
+                          <Ripple color="bg-white/20" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                }
+
+                if (activeTestSessions && activeTestSessions[test.id]) {
+                  const session = activeTestSessions[test.id];
+                  const sessionMinsLeft = Math.floor((session.timeLeft ?? test.timeLimit) / 60);
+                  const sessionSecsLeft = (session.timeLeft ?? test.timeLimit) % 60;
+                  const answeredCount = Object.keys(session.answers || {}).length;
+
+                  return (
+                    <>
+                      <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 text-xs text-amber-800 dark:text-amber-300">
+                        <div className="font-bold flex items-center justify-between mb-1">
+                          <span>In-Progress Attempt Saved</span>
+                          <span className="font-mono font-bold bg-amber-500/20 px-2 py-0.5 rounded text-[11px] text-amber-700 dark:text-amber-200">
+                            {sessionMinsLeft}:{sessionSecsLeft.toString().padStart(2, '0')} Left
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-amber-700/80 dark:text-amber-300/80">
+                          {answeredCount} of {test.questions.length} questions attempted. Timer is paused and saved.
+                        </p>
+                      </div>
+
+                      <button
+                        onClick={() => navigate(`/test/${test.id}`)}
+                        className="relative overflow-hidden w-full h-[50px] rounded-[14px] bg-amber-500 text-white flex items-center justify-center gap-2 hover:bg-amber-600 transition-colors shadow-sm font-semibold text-[15px]"
+                      >
+                        <PlayCircle className="w-[18px] h-[18px]" />
+                        <span>Resume In-Progress Test</span>
+                        <Ripple color="bg-white/20" />
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          clearActiveTestSession(test.id);
+                          const token = getAccessToken();
+                          saveSQLiteToDrive(token, useStore.getState(), true);
+                          navigate(`/test/${test.id}?fresh=true`);
+                        }}
+                        className="relative overflow-hidden w-full h-[46px] rounded-[14px] bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors flex items-center justify-center gap-2 font-semibold text-[14px]"
+                      >
+                        <RotateCcw className="w-4 h-4 text-slate-500" />
+                        <span>Start Fresh (Full {Math.floor(test.timeLimit / 60)} Mins)</span>
+                      </button>
+                    </>
+                  );
+                }
+
+                return (
+                  <button
+                    onClick={() => navigate(`/test/${test.id}`)}
+                    className="relative overflow-hidden w-full h-[52px] rounded-[14px] bg-[#2563EB] text-white flex items-center justify-center gap-2 hover:bg-[#1D4ED8] transition-colors shadow-sm"
+                  >
+                    <PlayCircle className="w-[18px] h-[18px]" />
+                    <span className="text-[15px] font-semibold tracking-wide">
+                      {isScheduled ? 'Enter Live Mock Test' : 'Start Mock Test'}
+                    </span>
+                    <Ripple color="bg-white/20" />
+                  </button>
+                );
+              })()}
 
               <button
                 onClick={() => navigate(`/test-answers/${test.id}`)}
-                className="mt-4 text-[14px] font-semibold text-[#64748B] hover:text-[#2563EB] transition-colors flex items-center justify-center gap-1.5 w-full h-10"
+                className="mt-1 text-[14px] font-semibold text-[#64748B] hover:text-[#2563EB] transition-colors flex items-center justify-center gap-1.5 w-full h-10"
               >
                 View Answer Key <ChevronRight className="w-[14px] h-[14px]" />
               </button>

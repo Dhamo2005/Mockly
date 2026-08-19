@@ -1,16 +1,118 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { BookOpen, LogOut, LogIn, Settings } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { BookOpen, LogOut, LogIn, Settings, PlayCircle, X } from 'lucide-react';
+import { useAuth, getAccessToken } from '../contexts/AuthContext';
 import { useHeader } from '../contexts/HeaderContext';
-import { Link, useNavigate } from 'react-router-dom';
+import { useStore } from '../store/useStore';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
+import { saveSQLiteToDrive } from '../lib/sqliteDriveSync';
 
 export const Header = () => {
   const { user, isSigningIn, signInWithGoogle, signOut } = useAuth();
   const { headerContent } = useHeader();
+  const { activeTestSessions, tests, attempts, clearActiveTestSession } = useStore();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Find genuine, valid active test session
+  const activeSessionEntry = useMemo(() => {
+    if (!activeTestSessions || Object.keys(activeTestSessions).length === 0) return null;
+
+    const now = Date.now();
+    const validEntries: Array<{ testId: string; session: any; test: any }> = [];
+
+    for (const [testId, session] of Object.entries(activeTestSessions)) {
+      if (!session) continue;
+      const test = tests.find(t => t.id === testId);
+      if (!test) continue;
+
+      // Check if session has timed out completely
+      const isStrict = Boolean(test.settings?.strictSectionalTiming && !test.settings?.allowSectionSwitching);
+      if (isStrict && session.sectionTimeLeft) {
+        const secValues = Object.values(session.sectionTimeLeft) as number[];
+        const hasTimeLeft = secValues.length > 0 && secValues.some(secTime => secTime > 0);
+        if (!hasTimeLeft && (session.timeLeft !== undefined && session.timeLeft <= 0)) {
+          continue; // All sections expired
+        }
+      } else if (session.timeLeft !== undefined && session.timeLeft <= 0) {
+        continue; // Regular timer expired
+      }
+
+      // Check if an attempt was already completed for this test
+      const alreadySubmitted = attempts.some(a => 
+        a.testId === testId && 
+        (a.completed || (a.endTime && a.endTime >= (session.lastUpdated || 0) - 2000))
+      );
+      if (alreadySubmitted) continue;
+
+      // Stale check: Tests left inactive for over 3 hours are expired
+      if (session.lastUpdated && now - session.lastUpdated > 3 * 60 * 60 * 1000) {
+        continue;
+      }
+
+      validEntries.push({ testId, session, test });
+    }
+
+    if (validEntries.length === 0) return null;
+
+    // Pick the most recently updated session
+    validEntries.sort((a, b) => (b.session.lastUpdated || 0) - (a.session.lastUpdated || 0));
+    return validEntries[0];
+  }, [activeTestSessions, tests, attempts]);
+
+  const activeTest = activeSessionEntry?.test || null;
+  const isTestPage = location.pathname.startsWith('/test/');
+
+  // Auto-prune expired / submitted / stale sessions in background
+  useEffect(() => {
+    if (!activeTestSessions) return;
+    const now = Date.now();
+    let hasCleaned = false;
+
+    for (const [testId, session] of Object.entries(activeTestSessions)) {
+      if (!session) continue;
+      const test = tests.find(t => t.id === testId);
+      const isStrict = Boolean(test?.settings?.strictSectionalTiming && !test?.settings?.allowSectionSwitching);
+      let expired = false;
+
+      if (!test) {
+        expired = true;
+      } else if (isStrict && session.sectionTimeLeft) {
+        const secValues = Object.values(session.sectionTimeLeft) as number[];
+        if (secValues.length > 0 && secValues.every(v => v <= 0)) {
+          expired = true;
+        }
+      } else if (session.timeLeft !== undefined && session.timeLeft <= 0) {
+        expired = true;
+      }
+
+      const alreadySubmitted = attempts.some(a => 
+        a.testId === testId && 
+        (a.completed || (a.endTime && a.endTime >= (session.lastUpdated || 0) - 2000))
+      );
+
+      const isStale = Boolean(session.lastUpdated && (now - session.lastUpdated > 3 * 60 * 60 * 1000));
+
+      if (expired || alreadySubmitted || isStale) {
+        clearActiveTestSession(testId);
+        hasCleaned = true;
+      }
+    }
+
+    if (hasCleaned) {
+      const token = getAccessToken();
+      saveSQLiteToDrive(token, useStore.getState(), false);
+    }
+  }, [activeTestSessions, tests, attempts, clearActiveTestSession]);
+
+  const handleDiscardActiveTest = (e: React.MouseEvent, testId: string) => {
+    e.stopPropagation();
+    clearActiveTestSession(testId);
+    const token = getAccessToken();
+    saveSQLiteToDrive(token, useStore.getState(), true);
+  };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -37,6 +139,35 @@ export const Header = () => {
         </motion.div>
         <h1 className="text-xl font-black text-slate-800 tracking-tight">Mockly</h1>
       </Link>
+
+      {/* Centered Active Test Button - Only shown when a genuine active test exists and not on test page */}
+      {activeTest && !isTestPage && (
+        <div className="absolute left-1/2 -translate-x-1/2 flex items-center z-30">
+          <div className="flex items-center bg-amber-50 hover:bg-amber-100/90 text-amber-800 border border-amber-300/80 rounded-full shadow-sm text-xs sm:text-sm font-semibold transition-all">
+            <button
+              onClick={() => navigate(`/test/${activeTest.id}`)}
+              className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 rounded-l-full cursor-pointer"
+              title={`Resume ${activeTest.title}`}
+            >
+              <span className="relative flex h-2 sm:h-2.5 w-2 sm:w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-500 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 sm:h-2.5 w-2 sm:w-2.5 bg-amber-500"></span>
+              </span>
+              <span className="hidden sm:inline">Resume: {activeTest.title.length > 22 ? activeTest.title.substring(0, 22) + '...' : activeTest.title}</span>
+              <span className="inline sm:hidden">Active Test</span>
+              <PlayCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-600 ml-0.5" />
+            </button>
+            <button
+              onClick={(e) => handleDiscardActiveTest(e, activeTest.id)}
+              className="p-1.5 pr-2.5 hover:text-red-600 transition-colors text-amber-600/70 focus:outline-none cursor-pointer"
+              title="Discard active session"
+              aria-label="Discard active test session"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="flex items-center gap-3">
         {headerContent}
