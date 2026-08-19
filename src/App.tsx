@@ -43,8 +43,28 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
           </p>
 
           {authError && (
-            <div className="w-full bg-red-50 text-red-600 border border-red-100 text-xs p-3 rounded-xl mt-4 text-left">
-              {authError}
+            <div className="w-full bg-amber-50 text-amber-900 border border-amber-200 text-xs p-4 rounded-2xl mt-4 text-left space-y-2">
+              <div className="font-bold flex items-center gap-1.5 text-amber-800">
+                <span>⚠️ Firebase Authorized Domain Required</span>
+              </div>
+              <p className="text-amber-700 leading-relaxed">
+                Your current domain is not yet added to your Firebase project's <strong>Authorized Domains</strong> list.
+              </p>
+              <div className="bg-white/80 border border-amber-200 rounded-lg p-2 flex items-center justify-between gap-2 font-mono text-[11px] text-slate-800">
+                <span className="truncate">{window.location.hostname}</span>
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard.writeText(window.location.hostname)}
+                  className="px-2 py-0.5 bg-amber-200/60 hover:bg-amber-200 text-amber-900 rounded text-[10px] font-bold shrink-0 transition-colors"
+                >
+                  Copy Domain
+                </button>
+              </div>
+              <p className="text-[11px] text-amber-700">
+                1. Go to <a href="https://console.firebase.google.com/project/mockly-6950a/authentication/settings" target="_blank" rel="noreferrer" className="underline font-bold text-amber-900 hover:text-amber-950">Firebase Console &gt; Authentication &gt; Settings &gt; Authorized domains</a>.<br />
+                2. Click <strong>Add domain</strong> and paste <code>{window.location.hostname}</code>.<br />
+                3. Click <strong>Save</strong> and retry signing in.
+              </p>
             </div>
           )}
 
@@ -208,7 +228,7 @@ export default function App() {
             <Route path="/test-details/:testId" element={<AppLayout><TestDetails /></AppLayout>} />
             <Route path="/test-answers/:testId" element={<AppLayout><TestAnswers /></AppLayout>} />
             <Route path="/test/:testId" element={<MockTestInterface />} />
-            <Route path="/review/:attemptId" element={<AppLayout><ReviewInterface /></AppLayout>} />
+            <Route path="/review/:attemptId" element={<ReviewInterface />} />
             <Route path="/bank" element={<AppLayout><QuestionBank /></AppLayout>} />
             <Route path="/settings" element={<AppLayout><SettingsPage /></AppLayout>} />
           </Routes>
