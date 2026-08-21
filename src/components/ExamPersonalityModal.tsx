@@ -569,7 +569,7 @@ export function ExamPersonalityModal({ isOpen, onClose, test, onSave }: ExamPers
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-bold text-blue-300 uppercase tracking-wider flex items-center gap-1.5">
                   <Award className="w-3.5 h-3.5 text-blue-400" />
-                  Simulated Scoring Impact
+                  Marking Scheme Preview
                 </span>
                 <span className={`text-[11px] font-extrabold px-2 py-0.5 rounded ${
                   negativeMarks === 0 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/30' : 'bg-rose-500/20 text-rose-300 border border-rose-400/30'

@@ -2,12 +2,13 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
-  X, Link2, Globe, Lock, Check, Copy, Shield, Sparkles, 
-  ExternalLink, UserCheck, PlayCircle, Eye, Info
+  X, Link2, Globe, Lock, Check, Copy, Shield, 
+  PlayCircle, Eye
 } from 'lucide-react';
 import { Test } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { updateTestSharingInFirestore } from '../lib/firebaseSync';
+import { useStore } from '../store/useStore';
 
 interface ShareTestModalProps {
   test: Test | null;
@@ -15,15 +16,20 @@ interface ShareTestModalProps {
   onClose: () => void;
 }
 
-export function ShareTestModal({ test, isOpen, onClose }: ShareTestModalProps) {
+export function ShareTestModal({ test: initialTest, isOpen, onClose }: ShareTestModalProps) {
   const { user } = useAuth();
+  const tests = useStore(state => state.tests);
+  
+  // Find current live test state from store if available
+  const liveTest = tests.find(t => t.id === initialTest?.id) || initialTest;
+
   const [copiedLink, setCopiedLink] = useState<'details' | 'direct' | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
 
-  if (!isOpen || !test) return null;
+  if (!isOpen || !liveTest) return null;
 
-  const isOwner = !test.ownerId || (user && test.ownerId === user.uid);
+  const test = liveTest;
   const currentVisibility = test.visibility || (test.isPublic === false ? 'private' : 'public');
   const isPublic = currentVisibility === 'public' || currentVisibility === 'unlisted';
 
@@ -47,17 +53,16 @@ export function ShareTestModal({ test, isOpen, onClose }: ShareTestModalProps) {
   };
 
   const handleVisibilityChange = async (newVisibility: 'public' | 'private') => {
-    if (!user || !isOwner) return;
     setIsUpdating(true);
     try {
       await updateTestSharingInFirestore(
-        user.uid,
+        user?.uid || null,
         test.id,
         newVisibility,
         newVisibility === 'public',
         {
-          ownerName: user.displayName || 'Creator',
-          ownerEmail: user.email || ''
+          ownerName: user?.displayName || 'User',
+          ownerEmail: user?.email || ''
         }
       );
     } catch (e) {
@@ -79,7 +84,7 @@ export function ShareTestModal({ test, isOpen, onClose }: ShareTestModalProps) {
           className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs"
         />
 
-        {/* Dialog Window (Google Drive style) */}
+        {/* Dialog Window */}
         <motion.div
           initial={{ scale: 0.95, opacity: 0, y: 10 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
@@ -108,46 +113,10 @@ export function ShareTestModal({ test, isOpen, onClose }: ShareTestModalProps) {
           </div>
 
           <div className="p-6 space-y-6">
-            {/* Owner Details Card */}
+            {/* General Access Section */}
             <div>
               <label className="text-xs font-bold uppercase tracking-wider text-slate-400 block mb-2.5">
-                People with access
-              </label>
-              <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-100">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-9 h-9 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center text-xs shadow-xs shrink-0">
-                    {user?.photoURL ? (
-                      <img src={user.photoURL} alt="Owner" className="w-full h-full rounded-full object-cover" />
-                    ) : (
-                      (user?.displayName?.[0] || 'U').toUpperCase()
-                    )}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-slate-800 truncate">
-                        {isOwner ? (user?.displayName || 'You') : (test.ownerName || 'Test Creator')}
-                      </span>
-                      {isOwner && (
-                        <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-bold">
-                          You
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-[11px] text-slate-500 truncate block">
-                      {isOwner ? (user?.email || '') : (test.ownerEmail || 'Shared via Firebase')}
-                    </span>
-                  </div>
-                </div>
-                <span className="text-xs font-semibold text-slate-500 bg-white border border-slate-200 px-2.5 py-1 rounded-lg">
-                  Owner
-                </span>
-              </div>
-            </div>
-
-            {/* General Access Section (Google Drive Model) */}
-            <div>
-              <label className="text-xs font-bold uppercase tracking-wider text-slate-400 block mb-2.5">
-                General access
+                Access Permissions
               </label>
               
               <div className="border border-slate-200 rounded-2xl p-4 space-y-3 bg-white shadow-xs">
@@ -163,43 +132,32 @@ export function ShareTestModal({ test, isOpen, onClose }: ShareTestModalProps) {
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <div>
-                        {isOwner ? (
-                          <select
-                            value={isPublic ? 'public' : 'private'}
-                            disabled={isUpdating}
-                            onChange={(e) => handleVisibilityChange(e.target.value as 'public' | 'private')}
-                            className="text-xs font-bold text-slate-800 bg-slate-100/80 hover:bg-slate-100 border border-slate-300/80 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer disabled:opacity-50"
-                          >
-                            <option value="public">🌐 Anyone with the link</option>
-                            <option value="private">🔒 Restricted (Only You)</option>
-                          </select>
-                        ) : (
-                          <span className="text-xs font-bold text-slate-800">
-                            {isPublic ? '🌐 Anyone with the link' : '🔒 Restricted'}
-                          </span>
-                        )}
+                        <select
+                          value={isPublic ? 'public' : 'private'}
+                          disabled={isUpdating}
+                          onChange={(e) => handleVisibilityChange(e.target.value as 'public' | 'private')}
+                          className="text-xs font-bold text-slate-800 bg-slate-100/80 hover:bg-slate-100 border border-slate-300/80 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer disabled:opacity-50"
+                        >
+                          <option value="public">🌐 Anyone with the link (Public)</option>
+                          <option value="private">🔒 Restricted / Private (Only You)</option>
+                        </select>
                       </div>
 
-                      <span className="text-[11px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md w-fit">
-                        Test Taker / Candidate
+                      <span className={`text-[11px] font-bold px-2 py-0.5 rounded-md w-fit ${
+                        isPublic ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'
+                      }`}>
+                        {isPublic ? 'Public Access' : 'Private Only'}
                       </span>
                     </div>
 
                     <p className="text-xs text-slate-500 mt-2 leading-relaxed">
                       {isPublic 
-                        ? 'Anyone on the internet who has this link can view the test overview and take the mock exam.'
-                        : 'Only you can view and attempt this test paper. Other users cannot open the link.'
+                        ? 'Anyone who has this link can view the test details and take the mock test.'
+                        : 'Only your account / device can access this test. Direct links from other users will be restricted.'
                       }
                     </p>
                   </div>
                 </div>
-
-                {!isOwner && (
-                  <div className="flex items-center gap-2 p-2 rounded-xl bg-slate-50 text-[11px] text-slate-500 border border-slate-100">
-                    <Info className="w-4 h-4 text-blue-500 shrink-0" />
-                    <span>Only the test creator can change this test’s sharing permissions.</span>
-                  </div>
-                )}
               </div>
             </div>
 
@@ -290,7 +248,7 @@ export function ShareTestModal({ test, isOpen, onClose }: ShareTestModalProps) {
           <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
               <Shield className="w-3.5 h-3.5 text-blue-600" />
-              <span>Synced securely with Firebase</span>
+              <span>Synced with Firebase</span>
             </div>
             <button
               type="button"

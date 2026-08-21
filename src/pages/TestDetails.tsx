@@ -155,8 +155,9 @@ export default function TestDetails() {
     );
   }
 
-  // Access Control Check (Google Drive Model)
-  const isOwner = !test.ownerId || (user && test.ownerId === user.uid);
+  // Access Control Check (If user has local copy or created it, they have full access)
+  const hasLocalCopy = tests.some(t => t.id === testId);
+  const isOwner = hasLocalCopy || !test.ownerId || (user && test.ownerId === user.uid);
   const isPrivate = test.visibility === 'private' || test.isPublic === false;
   const isAccessDenied = isPrivate && !isOwner;
 
@@ -598,8 +599,10 @@ export default function TestDetails() {
                       <p className="text-sm font-bold text-slate-800">{Math.floor((latestAttempt.endTime! - latestAttempt.startTime) / 60000)}m</p>
                     </div>
                     <div>
-                      <p className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-0.5">Percentile</p>
-                      <p className="text-sm font-bold text-slate-800">82</p>
+                      <p className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-0.5">Attempted</p>
+                      <p className="text-sm font-bold text-slate-800">
+                        {latestAttempt.correctAnswers + latestAttempt.incorrectAnswers} <span className="text-xs font-normal text-slate-400">/ {test.questions?.length || 0}</span>
+                      </p>
                     </div>
                   </div>
                   <button 

@@ -8,9 +8,7 @@ import { useStore } from '../store/useStore';
 
 export const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 export const auth = getAuth(app);
-export const db = firebaseConfig.firestoreDatabaseId === '(default)' 
-  ? getFirestore(app) 
-  : getFirestore(app, firebaseConfig.firestoreDatabaseId);
+export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
 // Initialize Firebase Analytics if supported in current environment
 export let analytics: any = null;
@@ -60,8 +58,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         await getDocFromServer(doc(db, 'test', 'connection'));
       } catch (error) {
-        if(error instanceof Error && error.message.includes('the client is offline')) {
-          console.error("Please check your Firebase configuration. The client is offline.");
+        if (error instanceof Error && error.message.includes('the client is offline')) {
+          console.warn("Firestore connection: client is offline or establishing connection.");
         }
       }
     };

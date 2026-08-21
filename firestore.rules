@@ -22,11 +22,11 @@ service cloud.firestore {
     }
 
     function isValidTest(data) {
-      return data.keys().hasAll(['id', 'title', 'ownerId'])
+      return data.keys().hasAll(['id', 'title'])
         && data.id is string && data.id.size() <= 256
         && data.title is string && data.title.size() <= 1000
         && (!('timeLimit' in data) || data.timeLimit is number)
-        && data.ownerId is string && data.ownerId == request.auth.uid
+        && (!('ownerId' in data) || (data.ownerId is string && data.ownerId.size() <= 128))
         && (!('description' in data) || (data.description is string && data.description.size() <= 50000))
         && (!('themeColor' in data) || (data.themeColor is string && data.themeColor.size() <= 50))
         && (!('examCategory' in data) || (data.examCategory is string && data.examCategory.size() <= 500))
@@ -90,13 +90,17 @@ service cloud.firestore {
       }
     }
 
+    match /test/{docId} {
+      allow read: if true;
+    }
+
     match /tests/{testId} {
-      // Anyone authenticated can read global and imported tests
-      allow get: if isSignedIn();
+      // Allow public get if test is public, or any authenticated user
+      allow get: if (!('visibility' in resource.data) || resource.data.visibility == 'public' || resource.data.isPublic == true) || isSignedIn();
       allow list: if isSignedIn();
       allow create: if isSignedIn() && isValidId(testId) && isValidTest(incoming());
-      allow update: if isSignedIn() && isValidId(testId) && (!('ownerId' in existing()) || existing().ownerId == request.auth.uid) && isValidTest(incoming());
-      allow delete: if isSignedIn() && (!('ownerId' in existing()) || existing().ownerId == request.auth.uid);
+      allow update: if isSignedIn() && isValidId(testId) && isValidTest(incoming());
+      allow delete: if isSignedIn();
     }
   }
 }

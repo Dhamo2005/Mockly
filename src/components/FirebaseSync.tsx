@@ -13,29 +13,26 @@ export function FirebaseSync() {
     if (loading) return; // Wait until Auth resolves
 
     if (user) {
-      // 1. Initial load
-      loadFromFirestore(user.uid).then(() => {
-        loadedOnce.current = true;
-        setIsInitialized(true);
-      });
-
-      // 2. Real-time multi-device listener
+      // Real-time multi-device listener
       const unsub = subscribeToFirestore(user.uid, () => {
         loadedOnce.current = true;
         setIsInitialized(true);
       });
 
+      // Safety timeout in case client is offline or network is slow
+      const timer = setTimeout(() => {
+        if (!loadedOnce.current) {
+          loadedOnce.current = true;
+          setIsInitialized(true);
+        }
+      }, 1000);
+
       return () => {
+        clearTimeout(timer);
         unsub();
       };
     } else {
-      // If not logged in, empty state initialized
-      useStore.setState({
-        tests: [],
-        attempts: [],
-        activeTestSessions: {},
-        bookmarks: {}
-      });
+      // If not logged in, local state is initialized
       loadedOnce.current = true;
       setIsInitialized(true);
     }

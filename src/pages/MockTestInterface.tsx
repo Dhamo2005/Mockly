@@ -1090,8 +1090,9 @@ export default function MockTestInterface() {
     );
   }
 
-  // Access Control Check (Google Drive Model)
-  const isOwner = !test.ownerId || (user && test.ownerId === user.uid);
+  // Access Control Check (If user has local copy or created it, they have full access)
+  const hasLocalCopy = tests.some(t => t.id === testId);
+  const isOwner = hasLocalCopy || !test.ownerId || (user && test.ownerId === user.uid);
   const isPrivate = test.visibility === 'private' || test.isPublic === false;
   const isAccessDenied = isPrivate && !isOwner;
 

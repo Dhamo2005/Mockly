@@ -16,7 +16,7 @@ import {
   Trophy, 
   FileText, 
   Target, 
-  Users, 
+  Clock, 
   Star, 
   RotateCcw, 
   Info, 
@@ -137,24 +137,6 @@ export default function ReviewInterface() {
   const accuracy = attemptedCount > 0 
     ? Math.round((currentAttempt.correctAnswers / attemptedCount) * 100) 
     : 0;
-
-  // Percentile Calculation (Standard normalized scale for competitive tests)
-  const scoreRatio = maxPossibleMarks > 0 ? Math.max(0, netMarks / maxPossibleMarks) : 0;
-  const percentile = useMemo(() => {
-    if (scoreRatio >= 0.98) return 100;
-    if (scoreRatio >= 0.90) return Math.min(99.9, Number((95 + scoreRatio * 4.9).toFixed(1)));
-    if (scoreRatio >= 0.75) return Math.min(95, Number((80 + (scoreRatio - 0.75) * 100).toFixed(1)));
-    if (scoreRatio >= 0.50) return Math.min(80, Number((50 + (scoreRatio - 0.50) * 120).toFixed(1)));
-    return Math.max(1, Number((scoreRatio * 100).toFixed(1)));
-  }, [scoreRatio]);
-
-  // Rank Calculation based on percentile & candidate pool
-  const benchmarkCandidates = 101699;
-  const simulatedRank = useMemo(() => {
-    if (percentile >= 100 || (netMarks === maxPossibleMarks && maxPossibleMarks > 0)) return 1;
-    const rank = Math.round(((100 - percentile) / 100) * benchmarkCandidates);
-    return Math.max(1, rank);
-  }, [percentile, netMarks, maxPossibleMarks]);
 
   // Format Duration (seconds to MM:SS or HH:MM:SS)
   const formatTime = (seconds: number) => {
@@ -532,24 +514,9 @@ export default function ReviewInterface() {
               </h2>
 
               <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-4 sm:p-6 md:p-8">
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-6 sm:gap-8 items-center">
+                <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8 items-center">
                   
-                  {/* Metric 1: Rank */}
-                  <div className="flex items-center gap-3.5">
-                    <div className="w-12 h-12 rounded-full bg-[#e53935] text-white flex items-center justify-center shadow-md shadow-red-500/20 shrink-0">
-                      <Award className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <p className="text-base sm:text-lg font-black text-slate-900 leading-tight">
-                        {simulatedRank} <span className="text-xs sm:text-sm font-normal text-slate-400">/ {benchmarkCandidates}</span>
-                      </p>
-                      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mt-0.5">
-                        Rank
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Metric 2: Score */}
+                  {/* Metric 1: Score */}
                   <div className="flex items-center gap-3.5">
                     <div className="w-12 h-12 rounded-full bg-[#7c4dff] text-white flex items-center justify-center shadow-md shadow-purple-500/20 shrink-0">
                       <Trophy className="w-6 h-6" />
@@ -559,7 +526,22 @@ export default function ReviewInterface() {
                         {netMarks} <span className="text-xs sm:text-sm font-normal text-slate-400">/ {maxPossibleMarks}</span>
                       </p>
                       <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mt-0.5">
-                        Score
+                        Net Score
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Metric 2: Accuracy */}
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-12 h-12 rounded-full bg-[#00c853] text-white flex items-center justify-center shadow-md shadow-emerald-500/20 shrink-0">
+                      <Target className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <p className="text-base sm:text-lg font-black text-slate-900 leading-tight">
+                        {accuracy}%
+                      </p>
+                      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mt-0.5">
+                        Accuracy ({currentAttempt.correctAnswers}/{attemptedCount || 0})
                       </p>
                     </div>
                   </div>
@@ -574,37 +556,22 @@ export default function ReviewInterface() {
                         {attemptedCount} <span className="text-xs sm:text-sm font-normal text-slate-400">/ {totalQuestions}</span>
                       </p>
                       <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mt-0.5">
-                        Attempted
+                        Questions Attempted
                       </p>
                     </div>
                   </div>
 
-                  {/* Metric 4: Accuracy */}
+                  {/* Metric 4: Time Taken */}
                   <div className="flex items-center gap-3.5">
-                    <div className="w-12 h-12 rounded-full bg-[#00c853] text-white flex items-center justify-center shadow-md shadow-emerald-500/20 shrink-0">
-                      <Target className="w-6 h-6" />
+                    <div className="w-12 h-12 rounded-full bg-[#f59e0b] text-white flex items-center justify-center shadow-md shadow-amber-500/20 shrink-0">
+                      <Clock className="w-6 h-6" />
                     </div>
                     <div>
                       <p className="text-base sm:text-lg font-black text-slate-900 leading-tight">
-                        {accuracy}%
+                        {formatTime(totalTimeSpentSeconds)}
                       </p>
                       <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mt-0.5">
-                        Accuracy
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Metric 5: Percentile */}
-                  <div className="flex items-center gap-3.5 col-span-2 sm:col-span-1">
-                    <div className="w-12 h-12 rounded-full bg-[#5c6bc0] text-white flex items-center justify-center shadow-md shadow-indigo-500/20 shrink-0">
-                      <Users className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <p className="text-base sm:text-lg font-black text-slate-900 leading-tight">
-                        {percentile}%
-                      </p>
-                      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mt-0.5">
-                        Percentile
+                        Time Spent
                       </p>
                     </div>
                   </div>
