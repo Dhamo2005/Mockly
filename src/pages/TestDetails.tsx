@@ -13,6 +13,7 @@ import { ExamPersonalityModal } from '../components/ExamPersonalityModal';
 import { ShareTestModal } from '../components/ShareTestModal';
 import { useAuth } from '../contexts/AuthContext';
 import { saveToFirestore, deleteTestFromFirestore, fetchTestByIdFromFirestore } from '../lib/firebaseSync';
+import { getTestDisplayDate, getAttemptDate } from '../lib/dateUtils';
 
 export default function TestDetails() {
   const { user } = useAuth();
@@ -300,9 +301,22 @@ export default function TestDetails() {
                   <span className="text-xl md:text-2xl font-bold text-slate-800 leading-none">{sectionsList.length}</span>
                   <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mt-1">Sections</span>
                 </div>
+                <div className="w-px h-8 bg-slate-200 hidden sm:block"></div>
+                <div className="flex flex-col flex-1 sm:flex-none border-l border-slate-100 pl-4 sm:border-0 sm:pl-0">
+                  <span className="text-sm md:text-base font-bold text-slate-800 leading-tight flex items-center gap-1 mt-0.5">
+                    <Calendar className="w-4 h-4 text-blue-600 shrink-0" />
+                    {getTestDisplayDate(test)}
+                  </span>
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mt-1">Paper Date</span>
+                </div>
               </div>
 
               <div className="flex flex-wrap items-center gap-2 mt-4 pt-4 border-t border-slate-50">
+                <span className="flex items-center gap-1 px-2.5 py-0.5 bg-slate-100 text-slate-700 text-[11px] font-bold rounded-md border border-slate-200">
+                  <Calendar className="w-3 h-3 text-slate-500" />
+                  {getTestDisplayDate(test)}
+                </span>
+
                 {/* Visibility Badge */}
                 <button
                   type="button"
@@ -567,7 +581,15 @@ export default function TestDetails() {
             {/* Previous Attempt */}
             <motion.div variants={itemVariants} className="bg-white p-4 md:p-5 rounded-xl shadow-sm border border-slate-200">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-[11px] font-bold text-slate-800 uppercase tracking-wider">Your Last Attempt</h3>
+                <div>
+                  <h3 className="text-[11px] font-bold text-slate-800 uppercase tracking-wider">Your Last Attempt</h3>
+                  {latestAttempt && getAttemptDate(latestAttempt) && (
+                    <p className="text-[11px] text-slate-500 font-medium flex items-center gap-1 mt-0.5">
+                      <Calendar className="w-3 h-3 text-slate-400" />
+                      {getAttemptDate(latestAttempt)}
+                    </p>
+                  )}
+                </div>
                 {latestAttempt && (
                   <button
                     onClick={() => setAttemptToDelete(latestAttempt.id)}
@@ -611,6 +633,32 @@ export default function TestDetails() {
                   >
                     View Analysis
                   </button>
+
+                  {/* Past Attempts History */}
+                  {testAttempts.length > 1 && (
+                    <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col gap-2">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">All Attempts ({testAttempts.length})</p>
+                      <div className="divide-y divide-slate-100 max-h-40 overflow-y-auto">
+                        {testAttempts.slice(1).map((att, idx) => (
+                          <div key={att.id} className="py-1.5 flex items-center justify-between text-xs">
+                            <div>
+                              <span className="font-semibold text-slate-700">Attempt #{testAttempts.length - 1 - idx}</span>
+                              <span className="text-[11px] text-slate-400 block">{getAttemptDate(att)}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-slate-700">{att.score} pts</span>
+                              <button 
+                                onClick={() => navigate(`/review/${att.id}`)}
+                                className="text-[11px] font-bold text-blue-600 hover:underline"
+                              >
+                                Review
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="flex flex-col items-center justify-center py-6 text-center">

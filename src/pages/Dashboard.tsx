@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store/useStore';
-import { PlayCircle, CheckCircle2, Clock, BarChart, Trash2, ArrowRight, Loader2 } from 'lucide-react';
+import { PlayCircle, CheckCircle2, Clock, BarChart, Trash2, ArrowRight, Loader2, Calendar } from 'lucide-react';
 import { Ripple } from '../components/Ripple';
 import { motion, AnimatePresence } from 'motion/react';
+import { getAttemptDate } from '../lib/dateUtils';
 
 export default function Dashboard() {
   const { tests, attempts, deleteAttempt, isInitialized } = useStore();
@@ -128,9 +129,17 @@ export default function Dashboard() {
                   className="p-2.5 md:p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50 transition-colors"
                 >
                   <div className="flex-1 min-w-0">
-                    <h4 className="font-bold text-sm text-slate-800 line-clamp-1 cursor-pointer hover:text-blue-700 transition-colors" onClick={() => navigate(`/test-details/${test.id}`)}>
-                      {test.title}
-                    </h4>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="font-bold text-sm text-slate-800 line-clamp-1 cursor-pointer hover:text-blue-700 transition-colors" onClick={() => navigate(`/test-details/${test.id}`)}>
+                        {test.title}
+                      </h4>
+                      {getAttemptDate(attempt) && (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500 bg-slate-100/90 px-2 py-0.5 rounded border border-slate-200">
+                          <Calendar className="w-3 h-3 text-slate-400" />
+                          {getAttemptDate(attempt)}
+                        </span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-3 mt-1 text-xs">
                       <div className="flex items-center gap-2 flex-1 max-w-[150px]">
                         <div className="h-1.5 flex-1 bg-slate-200 rounded-full overflow-hidden">

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { Test } from '../types';
 import { useAuth } from '../contexts/AuthContext';
-import { updateTestSharingInFirestore } from '../lib/firebaseSync';
+import { updateTestSharingInFirestore, sanitizeTestId } from '../lib/firebaseSync';
 import { useStore } from '../store/useStore';
 
 interface ShareTestModalProps {
@@ -21,17 +21,26 @@ export function ShareTestModal({ test: initialTest, isOpen, onClose }: ShareTest
   const tests = useStore(state => state.tests);
   
   // Find current live test state from store if available
-  const liveTest = tests.find(t => t.id === initialTest?.id) || initialTest;
+  const cleanId = initialTest ? sanitizeTestId(initialTest.id) : '';
+  const liveTest = tests.find(t => t.id === initialTest?.id || (cleanId && sanitizeTestId(t.id) === cleanId)) || initialTest;
 
+  const [currentVisibility, setCurrentVisibility] = useState<'public' | 'private'>('public');
   const [copiedLink, setCopiedLink] = useState<'details' | 'direct' | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
-  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  // Sync initial state on open or when liveTest updates
+  useEffect(() => {
+    if (liveTest) {
+      const vis: 'public' | 'private' = (liveTest.visibility === 'private' || liveTest.isPublic === false) ? 'private' : 'public';
+      setCurrentVisibility(vis);
+    }
+  }, [liveTest?.id, liveTest?.visibility, liveTest?.isPublic]);
 
   if (!isOpen || !liveTest) return null;
 
   const test = liveTest;
-  const currentVisibility = test.visibility || (test.isPublic === false ? 'private' : 'public');
-  const isPublic = currentVisibility === 'public' || currentVisibility === 'unlisted';
+  const isPublic = currentVisibility === 'public';
 
   // Construct absolute sharing links
   const origin = window.location.origin;
@@ -42,10 +51,10 @@ export function ShareTestModal({ test: initialTest, isOpen, onClose }: ShareTest
     try {
       await navigator.clipboard.writeText(url);
       setCopiedLink(type);
-      setCopyFeedback(type === 'direct' ? 'Direct exam link copied!' : 'Test details link copied!');
+      setFeedback(type === 'direct' ? 'Direct exam link copied to clipboard!' : 'Test details link copied to clipboard!');
       setTimeout(() => {
         setCopiedLink(null);
-        setCopyFeedback(null);
+        setFeedback(null);
       }, 3000);
     } catch (err) {
       console.error('Failed to copy link: ', err);
@@ -53,7 +62,15 @@ export function ShareTestModal({ test: initialTest, isOpen, onClose }: ShareTest
   };
 
   const handleVisibilityChange = async (newVisibility: 'public' | 'private') => {
+    // 1. Instant local optimistic update
+    setCurrentVisibility(newVisibility);
     setIsUpdating(true);
+
+    if (initialTest) {
+      initialTest.visibility = newVisibility;
+      initialTest.isPublic = newVisibility === 'public';
+    }
+
     try {
       await updateTestSharingInFirestore(
         user?.uid || null,
@@ -65,6 +82,10 @@ export function ShareTestModal({ test: initialTest, isOpen, onClose }: ShareTest
           ownerEmail: user?.email || ''
         }
       );
+      setFeedback(newVisibility === 'public' ? 'Test is now Public (Anyone with link)' : 'Test is now Restricted (Private)');
+      setTimeout(() => {
+        setFeedback(null);
+      }, 3000);
     } catch (e) {
       console.error('Error changing visibility:', e);
     } finally {
@@ -232,14 +253,14 @@ export function ShareTestModal({ test: initialTest, isOpen, onClose }: ShareTest
               </div>
             </div>
 
-            {copyFeedback && (
+            {feedback && (
               <motion.div
                 initial={{ opacity: 0, y: -5 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs py-2 px-3 rounded-xl font-semibold flex items-center justify-center gap-1.5"
               >
                 <Check className="w-4 h-4 text-emerald-600" />
-                <span>{copyFeedback}</span>
+                <span>{feedback}</span>
               </motion.div>
             )}
           </div>

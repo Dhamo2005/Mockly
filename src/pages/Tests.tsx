@@ -4,12 +4,13 @@ import { useStore } from '../store/useStore';
 import { useAuth } from '../contexts/AuthContext';
 import { deleteTestFromFirestore, saveToFirestore } from '../lib/firebaseSync';
 import { useNavigate } from 'react-router-dom';
-import { PlayCircle, Globe, DownloadCloud, Trash2, BookOpen, Clock, AlignLeft, AlarmClock, Database, ArrowLeftRight, Share2, Lock } from 'lucide-react';
+import { PlayCircle, Globe, DownloadCloud, Trash2, BookOpen, Clock, AlignLeft, AlarmClock, Database, ArrowLeftRight, Share2, Lock, Calendar } from 'lucide-react';
 import { Ripple } from '../components/Ripple';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { ShareTestModal } from '../components/ShareTestModal';
 import { Test } from '../types';
+import { getTestDisplayDate } from '../lib/dateUtils';
 import QuestionBank from './QuestionBank';
 
 export default function Tests() {
@@ -117,6 +118,10 @@ export default function Tests() {
                           {test.title}
                         </h4>
                         <div className="flex items-center gap-2 mt-1 flex-wrap text-[11px]">
+                          <span className="flex items-center gap-1 text-slate-600 bg-slate-100/90 px-1.5 py-0.5 rounded border border-slate-200 font-medium">
+                            <Calendar className="w-3 h-3 text-slate-500" />
+                            {getTestDisplayDate(test)}
+                          </span>
                           <span className="flex items-center gap-1 text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 font-medium">
                             <AlignLeft className="w-3 h-3 text-slate-400" />
                             {test.questions.length} Qs

@@ -24,8 +24,10 @@ import {
   Sparkles,
   ExternalLink,
   BookOpen,
-  ArrowRight
+  ArrowRight,
+  Calendar
 } from 'lucide-react';
+import { getTestDisplayDate } from '../lib/dateUtils';
 import { cn, getLocalizedText } from '../lib/utils';
 import { Language } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
@@ -346,9 +348,15 @@ export default function ReviewInterface() {
 
             <div className="h-5 w-px bg-slate-200 hidden sm:block shrink-0" />
 
-            <h1 className="text-sm sm:text-base font-bold text-slate-800 truncate" title={test.title}>
-              {test.title}
-            </h1>
+            <div className="flex flex-col min-w-0">
+              <h1 className="text-sm sm:text-base font-bold text-slate-800 truncate" title={test.title}>
+                {test.title}
+              </h1>
+              <span className="text-[11px] text-slate-500 font-medium flex items-center gap-1">
+                <Calendar className="w-3 h-3 text-slate-400" />
+                Paper: {getTestDisplayDate(test)}
+              </span>
+            </div>
           </div>
 
           {/* Right: Actions Bar */}

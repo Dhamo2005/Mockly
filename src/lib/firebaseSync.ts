@@ -68,15 +68,33 @@ export async function updateTestSharingInFirestore(
 
   // 1. Immediately update in local state for all tests matching ID
   const store = useStore.getState();
-  const existingTest = store.tests.find(t => t.id === cleanId || t.id === targetId);
+  const existingTest = store.tests.find(t => t.id === cleanId || t.id === targetId || sanitizeTestId(t.id) === cleanId);
 
-  store.updateTest({
-    id: existingTest ? existingTest.id : cleanId,
+  const testPayload = {
     visibility,
     isPublic,
     ...(ownerInfo?.ownerName ? { ownerName: ownerInfo.ownerName } : {}),
     ...(ownerInfo?.ownerEmail ? { ownerEmail: ownerInfo.ownerEmail } : {})
+  };
+
+  store.updateTest({
+    id: cleanId,
+    ...testPayload
   } as any);
+
+  if (targetId !== cleanId) {
+    store.updateTest({
+      id: targetId,
+      ...testPayload
+    } as any);
+  }
+
+  if (existingTest) {
+    store.updateTest({
+      id: existingTest.id,
+      ...testPayload
+    } as any);
+  }
 
   // 2. Also save to Firestore if db is ready
   if (db) {
@@ -101,6 +119,9 @@ export async function updateTestSharingInFirestore(
       }
       if (existingTest?.settings) {
         updates.settings = existingTest.settings;
+      }
+      if (existingTest?.description) {
+        updates.description = existingTest.description;
       }
 
       await setDoc(doc(db, 'tests', cleanId), cleanData(updates), { merge: true });
@@ -242,12 +263,18 @@ export function subscribeToFirestore(userId: string, onInitialLoaded?: () => voi
         }
       });
 
-      // Update tests in store
+      // Update tests in store without wiping local papers
       useStore.setState((state) => {
-        // Create map of remote tests
         const map = new Map<string, Test>();
-        remoteTests.forEach(t => map.set(t.id, t));
-        
+        (state.tests || []).forEach(t => {
+          if (t && t.id) map.set(t.id, t);
+        });
+        remoteTests.forEach(t => {
+          if (t && t.id) {
+            const existing = map.get(t.id);
+            map.set(t.id, existing ? { ...existing, ...t } : t);
+          }
+        });
         return { tests: Array.from(map.values()) };
       });
 
@@ -270,7 +297,16 @@ export function subscribeToFirestore(userId: string, onInitialLoaded?: () => voi
           remoteAttempts.push(data);
         }
       });
-      useStore.setState({ attempts: remoteAttempts });
+      useStore.setState((state) => {
+        const map = new Map<string, TestAttempt>();
+        (state.attempts || []).forEach(a => {
+          if (a && a.id) map.set(a.id, a);
+        });
+        remoteAttempts.forEach(a => {
+          if (a && a.id) map.set(a.id, a);
+        });
+        return { attempts: Array.from(map.values()) };
+      });
     }, (err) => {
       console.warn('Real-time attempts listener error:', err);
     });
@@ -282,7 +318,12 @@ export function subscribeToFirestore(userId: string, onInitialLoaded?: () => voi
       snap.docs.forEach((d) => {
         remoteSessions[d.id] = d.data() as ActiveTestSession;
       });
-      useStore.setState({ activeTestSessions: remoteSessions });
+      useStore.setState((state) => ({
+        activeTestSessions: {
+          ...state.activeTestSessions,
+          ...remoteSessions
+        }
+      }));
     }, (err) => {
       console.warn('Real-time sessions listener error:', err);
     });
@@ -299,7 +340,10 @@ export function subscribeToFirestore(userId: string, onInitialLoaded?: () => voi
           });
         }
         const language: Language = data.language || 'en';
-        useStore.setState({ bookmarks, language });
+        useStore.setState((state) => ({
+          bookmarks: { ...state.bookmarks, ...bookmarks },
+          language: language || state.language || 'en'
+        }));
       }
     }, (err) => {
       console.warn('Real-time user listener error:', err);
@@ -350,12 +394,22 @@ export async function loadFromFirestore(userId: string) {
       activeTestSessions[d.id] = d.data() as ActiveTestSession;
     });
 
-    useStore.setState({
-      tests,
-      attempts,
-      activeTestSessions,
-      bookmarks,
-      language
+    useStore.setState((state) => {
+      const testMap = new Map<string, Test>();
+      (state.tests || []).forEach(t => { if (t?.id) testMap.set(t.id, t); });
+      tests.forEach(t => { if (t?.id) testMap.set(t.id, { ...(testMap.get(t.id) || {}), ...t }); });
+
+      const attemptMap = new Map<string, TestAttempt>();
+      (state.attempts || []).forEach(a => { if (a?.id) attemptMap.set(a.id, a); });
+      attempts.forEach(a => { if (a?.id) attemptMap.set(a.id, a); });
+
+      return {
+        tests: Array.from(testMap.values()),
+        attempts: Array.from(attemptMap.values()),
+        activeTestSessions: { ...state.activeTestSessions, ...activeTestSessions },
+        bookmarks: { ...state.bookmarks, ...bookmarks },
+        language: language || state.language || 'en'
+      };
     });
     
     useStore.getState().setSyncStatus('synced', Date.now());

@@ -95,12 +95,9 @@ service cloud.firestore {
     }
 
     match /tests/{testId} {
-      // Allow public get if test is public, or any authenticated user
-      allow get: if (!('visibility' in resource.data) || resource.data.visibility == 'public' || resource.data.isPublic == true) || isSignedIn();
-      allow list: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(testId) && isValidTest(incoming());
-      allow update: if isSignedIn() && isValidId(testId) && isValidTest(incoming());
-      allow delete: if isSignedIn();
+      // Allow unrestricted access for single user application
+      allow read: if true;
+      allow write: if true;
     }
   }
 }

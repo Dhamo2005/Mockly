@@ -143,6 +143,8 @@ export interface Test {
   exam?: ExamMetadata;
   scoring?: ScoringConfig;
   settings?: MockTestSettings;
+  createdAt?: number | string;
+  updatedAt?: number | string;
 }
 
 export interface ProductionMockTestBundle {
@@ -198,6 +200,7 @@ export interface TestAttempt {
   correctAnswers: number;
   incorrectAnswers: number;
   userAttempts?: Record<string, UserQuestionAttempt>;
+  createdAt?: number | string;
 }
 
 export interface ActiveTestSession {

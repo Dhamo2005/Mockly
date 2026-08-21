@@ -4,12 +4,13 @@ import { createPortal } from 'react-dom';
 import { useStore } from '../store/useStore';
 import { useAuth } from '../contexts/AuthContext';
 import { saveTestToFirestore, saveToFirestore, deleteTestFromFirestore, sanitizeTestId } from '../lib/firebaseSync';
-import { Upload, FileJson, Download, CheckCircle2, AlertCircle, Trash2, Database, ShieldCheck, Sliders, Sparkles, AlarmClock, ArrowLeftRight, Share2, Globe, Lock } from 'lucide-react';
+import { Upload, FileJson, Download, CheckCircle2, AlertCircle, Trash2, Database, ShieldCheck, Sliders, Sparkles, AlarmClock, ArrowLeftRight, Share2, Globe, Lock, Calendar } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { Test, Question } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { ExamPersonalityModal } from '../components/ExamPersonalityModal';
 import { ShareTestModal } from '../components/ShareTestModal';
+import { getTestDisplayDate } from '../lib/dateUtils';
 
 export default function QuestionBank() {
   const navigate = useNavigate();
@@ -448,6 +449,10 @@ export default function QuestionBank() {
                     </div>
                     
                     <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                      <span className="flex items-center gap-1 text-xs font-semibold text-slate-600 bg-slate-100/90 px-2 py-0.5 rounded-md border border-slate-200">
+                        <Calendar className="w-3 h-3 text-slate-400" />
+                        {getTestDisplayDate(test)}
+                      </span>
                       <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">{test.questions.length} questions</span>
                       <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">{test.sections.length} sections</span>
                       
