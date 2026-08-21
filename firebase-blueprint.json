@@ -11,7 +11,11 @@
         "timeLimit": { "type": "number" },
         "themeColor": { "type": "string" },
         "examCategory": { "type": "string" },
-        "ownerId": { "type": "string" }
+        "ownerId": { "type": "string" },
+        "visibility": { "type": "string" },
+        "isPublic": { "type": "boolean" },
+        "ownerName": { "type": "string" },
+        "ownerEmail": { "type": "string" }
       },
       "required": ["id", "title", "timeLimit", "ownerId"]
     },

@@ -8,30 +8,32 @@ service cloud.firestore {
 
     // Primitive Helpers
     function isValidId(id) { 
-      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+      return id is string && id.size() > 0 && id.size() <= 256; 
     }
     function incoming() { return request.resource.data; }
     function existing() { return resource.data; }
-    function isSignedIn() { return request.auth != null && request.auth.token.email_verified == true; }
+    function isSignedIn() { return request.auth != null; }
     function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
 
     // Entities Validation
     function isValidUserData(data) {
-      return data.keys().hasAll([]) 
-        && data.keys().size() <= 2
-        && (!('bookmarks' in data) || (data.bookmarks is list && data.bookmarks.size() <= 1000))
-        && (!('language' in data) || (data.language is string && data.language.size() <= 10));
+      return (!('bookmarks' in data) || (data.bookmarks is list && data.bookmarks.size() <= 5000))
+        && (!('language' in data) || (data.language is string && data.language.size() <= 20));
     }
 
     function isValidTest(data) {
-      return data.keys().hasAll(['id', 'title', 'timeLimit', 'ownerId'])
-        && data.id is string && data.id.size() <= 128
-        && data.title is string && data.title.size() <= 200
-        && data.timeLimit is number && data.timeLimit > 0
+      return data.keys().hasAll(['id', 'title', 'ownerId'])
+        && data.id is string && data.id.size() <= 256
+        && data.title is string && data.title.size() <= 1000
+        && (!('timeLimit' in data) || data.timeLimit is number)
         && data.ownerId is string && data.ownerId == request.auth.uid
-        && (!('description' in data) || (data.description is string && data.description.size() <= 2000))
-        && (!('themeColor' in data) || (data.themeColor is string && data.themeColor.size() <= 20))
-        && (!('examCategory' in data) || (data.examCategory is string && data.examCategory.size() <= 100));
+        && (!('description' in data) || (data.description is string && data.description.size() <= 50000))
+        && (!('themeColor' in data) || (data.themeColor is string && data.themeColor.size() <= 50))
+        && (!('examCategory' in data) || (data.examCategory is string && data.examCategory.size() <= 500))
+        && (!('visibility' in data) || (data.visibility is string && data.visibility.size() <= 30))
+        && (!('isPublic' in data) || data.isPublic is bool)
+        && (!('ownerName' in data) || (data.ownerName is string && data.ownerName.size() <= 150))
+        && (!('ownerEmail' in data) || (data.ownerEmail is string && data.ownerEmail.size() <= 200));
     }
 
     function isValidAttempt(data, userId) {
@@ -61,7 +63,7 @@ service cloud.firestore {
     // Rules
     match /users/{userId} {
       allow get: if isOwner(userId);
-      allow list: if isOwner(userId); // list filtered by userId
+      allow list: if isOwner(userId);
       allow create: if isOwner(userId) && isValidId(userId) && isValidUserData(incoming());
       allow update: if isOwner(userId) && isValidId(userId) && isValidUserData(incoming());
       allow delete: if isOwner(userId);
@@ -89,14 +91,12 @@ service cloud.firestore {
     }
 
     match /tests/{testId} {
-      // Anyone authenticated can read global tests
+      // Anyone authenticated can read global and imported tests
       allow get: if isSignedIn();
       allow list: if isSignedIn();
       allow create: if isSignedIn() && isValidId(testId) && isValidTest(incoming());
-      allow update: if isSignedIn() && isValidId(testId) && existing().ownerId == request.auth.uid && isValidTest(incoming())
-        && incoming().ownerId == existing().ownerId
-        && incoming().id == existing().id;
-      allow delete: if isSignedIn() && existing().ownerId == request.auth.uid;
+      allow update: if isSignedIn() && isValidId(testId) && (!('ownerId' in existing()) || existing().ownerId == request.auth.uid) && isValidTest(incoming());
+      allow delete: if isSignedIn() && (!('ownerId' in existing()) || existing().ownerId == request.auth.uid);
     }
   }
 }

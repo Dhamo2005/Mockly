@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { BookOpen, LogOut, LogIn, Settings, PlayCircle, X } from 'lucide-react';
-import { useAuth, getAccessToken } from '../contexts/AuthContext';
+import { useAuth } from '../contexts/AuthContext';
 import { useHeader } from '../contexts/HeaderContext';
 import { useStore } from '../store/useStore';
 import { Link, useNavigate, useLocation } from 'react-router-dom';

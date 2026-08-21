@@ -7,7 +7,7 @@ import {
   BookOpen, Clock, AlertTriangle, AlertCircle, Play, Pause, 
   RotateCcw, RefreshCw, LogOut, CheckCircle2, Maximize, Menu,
   X, Cloud, CloudOff, Plus, Minus, Search, ChevronRight, ChevronLeft, Check, Flag, Circle,
-  ArrowLeft, Calendar, ShieldCheck
+  ArrowLeft, Calendar, ShieldCheck, Lock, Globe, User
 } from 'lucide-react';
 import { cn, getLocalizedText } from '../lib/utils';
 import { v4 as uuidv4 } from 'uuid';
@@ -15,8 +15,8 @@ import Markdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
-import { getAccessToken, useAuth } from '../contexts/AuthContext';
-import { saveToFirestore } from '../lib/firebaseSync';
+import { useAuth } from '../contexts/AuthContext';
+import { saveToFirestore, deleteActiveSessionFromFirestore, fetchTestByIdFromFirestore } from '../lib/firebaseSync';
 
 export default function MockTestInterface() {
   const { user } = useAuth();
@@ -34,10 +34,27 @@ export default function MockTestInterface() {
     activeTestSessions, 
     updateActiveTestSession, 
     clearActiveTestSession,
+    importTests,
     syncStatus 
   } = useStore();
   
+  const [isFetchingRemote, setIsFetchingRemote] = useState(false);
   const test = tests.find(t => t.id === testId);
+
+  // If opening directly via share link and test is not in store, fetch from Firestore
+  useEffect(() => {
+    if (!test && testId && !isFetchingRemote) {
+      setIsFetchingRemote(true);
+      fetchTestByIdFromFirestore(testId).then((fetchedTest) => {
+        if (fetchedTest) {
+          importTests([fetchedTest]);
+        }
+        setIsFetchingRemote(false);
+      }).catch(() => {
+        setIsFetchingRemote(false);
+      });
+    }
+  }, [test, testId, isFetchingRemote, importTests]);
   const allowSectionSwitching = test?.settings?.allowSectionSwitching === true || test?.settings?.allowForceSkipSection === true;
   const isStrictSectional = test?.settings?.strictSectionalTiming === true && !allowSectionSwitching;
   const canSwitchSections = !isStrictSectional || allowSectionSwitching;
@@ -688,31 +705,44 @@ export default function MockTestInterface() {
       : 'answered';
     const newStatuses: Record<string, QuestionStatus> = { ...statuses, [currentQuestion.id]: newStatus };
 
+    // Synchronously update refs so any immediate tick or window event uses the fresh state
+    answersRef.current = newAnswers;
+    statusesRef.current = newStatuses;
+
     setAnswers(newAnswers);
     setStatuses(newStatuses);
 
     if (testId) {
-      updateActiveTestSession(testId, {
+      const sessionData = {
+        testId,
         answers: newAnswers,
         statuses: newStatuses,
         currentQuestionIndex,
         currentSectionIndex,
-        timeLeft,
-        sectionTimeLeft,
-        timeSpent,
+        timeLeft: timeLeftRef.current,
+        sectionTimeLeft: sectionTimeLeftRef.current,
+        timeSpent: timeSpentRef.current,
         startTime: sessionStartTimeRef.current,
         endTime: sessionEndTimeRef.current,
         lastUpdated: Date.now()
-      });
+      };
+      updateActiveTestSession(testId, sessionData);
+      try {
+        localStorage.setItem('mockly_active_session_' + testId, JSON.stringify(sessionData));
+      } catch (e) {}
 
-      if (user) saveToFirestore(user.uid, useStore.getState());
+      if (user) {
+        saveToFirestore(user.uid, null, true);
+      }
     }
   };
 
   const handleNext = () => {
     if (statuses[currentQuestion.id] === 'unvisited' || statuses[currentQuestion.id] === 'unanswered') {
       if (!answers[currentQuestion.id]) {
-        setStatuses(prev => ({ ...prev, [currentQuestion.id]: 'unanswered' }));
+        const nextStatuses = { ...statuses, [currentQuestion.id]: 'unanswered' as QuestionStatus };
+        statusesRef.current = nextStatuses;
+        setStatuses(nextStatuses);
       }
     }
     
@@ -727,26 +757,39 @@ export default function MockTestInterface() {
       const nextSecIdx = sections.indexOf(nextQ.section);
       if (nextSecIdx !== -1 && nextSecIdx !== currentSectionIndex) {
         setCurrentSectionIndex(nextSecIdx);
+        currentSectionIndexRef.current = nextSecIdx;
       }
       
-      setCurrentQuestionIndex(prev => prev + 1);
-      const nextId = test.questions[currentQuestionIndex + 1].id;
-      if (statuses[nextId] === 'unvisited') {
-        setStatuses(prev => ({ ...prev, [nextId]: 'unanswered' }));
+      const nextIdx = currentQuestionIndex + 1;
+      setCurrentQuestionIndex(nextIdx);
+      currentQuestionIndexRef.current = nextIdx;
+
+      const nextId = test.questions[nextIdx].id;
+      if (statuses[nextId] === 'unvisited' || !statuses[nextId]) {
+        const updatedStatuses = { ...(statusesRef.current || statuses), [nextId]: 'unanswered' as QuestionStatus };
+        statusesRef.current = updatedStatuses;
+        setStatuses(updatedStatuses);
       }
 
       if (testId) {
-        updateActiveTestSession(testId, {
-          currentQuestionIndex: currentQuestionIndex + 1,
+        const sessionData = {
+          testId,
+          answers: answersRef.current,
+          statuses: statusesRef.current,
+          currentQuestionIndex: nextIdx,
           currentSectionIndex: nextSecIdx !== -1 ? nextSecIdx : currentSectionIndex,
-          timeLeft,
-          sectionTimeLeft,
-          timeSpent,
+          timeLeft: timeLeftRef.current,
+          sectionTimeLeft: sectionTimeLeftRef.current,
+          timeSpent: timeSpentRef.current,
           startTime: sessionStartTimeRef.current,
           endTime: sessionEndTimeRef.current,
           lastUpdated: Date.now()
-        });
-        if (user) saveToFirestore(user.uid, useStore.getState());
+        };
+        updateActiveTestSession(testId, sessionData);
+        try {
+          localStorage.setItem('mockly_active_session_' + testId, JSON.stringify(sessionData));
+        } catch (e) {}
+        if (user) saveToFirestore(user.uid);
       }
     }
   };
@@ -757,22 +800,28 @@ export default function MockTestInterface() {
       ...statuses, 
       [currentQuestion.id]: isAnswered ? ('answered_marked' as QuestionStatus) : ('marked' as QuestionStatus) 
     };
+    statusesRef.current = newStatuses;
     setStatuses(newStatuses);
 
     if (testId) {
-      updateActiveTestSession(testId, {
+      const sessionData = {
+        testId,
         statuses: newStatuses,
-        answers,
+        answers: answersRef.current,
         currentQuestionIndex,
         currentSectionIndex,
-        timeLeft,
-        sectionTimeLeft,
-        timeSpent,
+        timeLeft: timeLeftRef.current,
+        sectionTimeLeft: sectionTimeLeftRef.current,
+        timeSpent: timeSpentRef.current,
         startTime: sessionStartTimeRef.current,
         endTime: sessionEndTimeRef.current,
         lastUpdated: Date.now()
-      });
-      if (user) saveToFirestore(user.uid, useStore.getState());
+      };
+      updateActiveTestSession(testId, sessionData);
+      try {
+        localStorage.setItem('mockly_active_session_' + testId, JSON.stringify(sessionData));
+      } catch (e) {}
+      if (user) saveToFirestore(user.uid, null, true);
     }
     handleNext();
   };
@@ -785,23 +834,31 @@ export default function MockTestInterface() {
       [currentQuestion.id]: 'unanswered' as QuestionStatus
     };
 
+    answersRef.current = newAnswers;
+    statusesRef.current = newStatuses;
+
     setAnswers(newAnswers);
     setStatuses(newStatuses);
 
     if (testId) {
-      updateActiveTestSession(testId, {
+      const sessionData = {
+        testId,
         answers: newAnswers,
         statuses: newStatuses,
         currentQuestionIndex,
         currentSectionIndex,
-        timeLeft,
-        sectionTimeLeft,
-        timeSpent,
+        timeLeft: timeLeftRef.current,
+        sectionTimeLeft: sectionTimeLeftRef.current,
+        timeSpent: timeSpentRef.current,
         startTime: sessionStartTimeRef.current,
         endTime: sessionEndTimeRef.current,
         lastUpdated: Date.now()
-      });
-      if (user) saveToFirestore(user.uid, useStore.getState());
+      };
+      updateActiveTestSession(testId, sessionData);
+      try {
+        localStorage.setItem('mockly_active_session_' + testId, JSON.stringify(sessionData));
+      } catch (e) {}
+      if (user) saveToFirestore(user.uid, null, true);
     }
   };
 
@@ -820,32 +877,46 @@ export default function MockTestInterface() {
     // update current question status if leaving
     if (statuses[currentQuestion.id] === 'unvisited') {
        if (!answers[currentQuestion.id]) {
-         setStatuses(prev => ({ ...prev, [currentQuestion.id]: 'unanswered' }));
+         const nextStatuses = { ...statuses, [currentQuestion.id]: 'unanswered' as QuestionStatus };
+         statusesRef.current = nextStatuses;
+         setStatuses(nextStatuses);
        }
     }
 
     if (targetSecIdx !== -1 && targetSecIdx !== currentSectionIndex) {
       setCurrentSectionIndex(targetSecIdx);
+      currentSectionIndexRef.current = targetSecIdx;
     }
     
     setCurrentQuestionIndex(index);
+    currentQuestionIndexRef.current = index;
+    
     const targetId = test.questions[index].id;
     if (statuses[targetId] === 'unvisited' || !statuses[targetId]) {
-      setStatuses(prev => ({ ...prev, [targetId]: 'unanswered' }));
+      const updatedStatuses = { ...(statusesRef.current || statuses), [targetId]: 'unanswered' as QuestionStatus };
+      statusesRef.current = updatedStatuses;
+      setStatuses(updatedStatuses);
     }
 
     if (testId) {
-      updateActiveTestSession(testId, {
+      const sessionData = {
+        testId,
+        answers: answersRef.current,
+        statuses: statusesRef.current,
         currentQuestionIndex: index,
         currentSectionIndex: targetSecIdx !== -1 ? targetSecIdx : currentSectionIndex,
-        timeLeft,
-        sectionTimeLeft,
-        timeSpent,
+        timeLeft: timeLeftRef.current,
+        sectionTimeLeft: sectionTimeLeftRef.current,
+        timeSpent: timeSpentRef.current,
         startTime: sessionStartTimeRef.current,
         endTime: sessionEndTimeRef.current,
         lastUpdated: Date.now()
-      });
-      if (user) saveToFirestore(user.uid, useStore.getState());
+      };
+      updateActiveTestSession(testId, sessionData);
+      try {
+        localStorage.setItem('mockly_active_session_' + testId, JSON.stringify(sessionData));
+      } catch (e) {}
+      if (user) saveToFirestore(user.uid);
     }
   };
   handleJumpToQuestionRef.current = handleJumpToQuestion;
@@ -866,10 +937,14 @@ export default function MockTestInterface() {
     let correct = 0;
     let incorrect = 0;
     
+    const finalAnswers = answersRef.current || answers;
+    const finalStatuses = statusesRef.current || statuses;
+    const finalTimeSpent = timeSpentRef.current || timeSpent;
+
     test.questions.forEach(q => {
-      if (answers[q.id] === q.correctOptionId) {
+      if (finalAnswers[q.id] === q.correctOptionId) {
         correct++;
-      } else if (answers[q.id]) {
+      } else if (finalAnswers[q.id]) {
         incorrect++;
       }
     });
@@ -886,9 +961,9 @@ export default function MockTestInterface() {
       testId: test.id,
       startTime,
       endTime,
-      answers,
-      statuses,
-      timeSpent,
+      answers: finalAnswers,
+      statuses: finalStatuses,
+      timeSpent: finalTimeSpent,
       completed: true,
       score: netScore, 
       totalQuestions: test.questions.length,
@@ -897,8 +972,16 @@ export default function MockTestInterface() {
     };
     
     addAttempt(attempt);
-    if (testId) clearActiveTestSession(testId);
-    if (user) saveToFirestore(user.uid, useStore.getState());
+    if (testId) {
+      clearActiveTestSession(testId);
+      try {
+        localStorage.removeItem('mockly_active_session_' + testId);
+      } catch (e) {}
+    }
+    if (user && testId) {
+      deleteActiveSessionFromFirestore(user.uid, testId);
+      saveToFirestore(user.uid, null, true);
+    }
     navigate(`/review/${attempt.id}`);
   };
   handleSubmitRef.current = handleSubmit;
@@ -983,17 +1066,65 @@ export default function MockTestInterface() {
 
 
   if (!test) {
-    if (!isInitialized) {
+    if (!isInitialized || isFetchingRemote) {
       return (
         <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950 p-6">
           <div className="flex flex-col items-center gap-3">
             <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-            <p className="text-sm font-medium text-slate-600 dark:text-slate-400">Loading test session...</p>
+            <p className="text-sm font-medium text-slate-600 dark:text-slate-400">Loading test session from Firebase...</p>
           </div>
         </div>
       );
     }
-    return <div className="p-8 text-center text-slate-600 font-bold">Test not found</div>;
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950 p-6">
+        <div className="max-w-md w-full text-center bg-white dark:bg-slate-900 rounded-3xl p-8 border border-slate-200 dark:border-slate-800 shadow-xl">
+          <AlertCircle className="w-12 h-12 text-slate-400 mx-auto mb-3" />
+          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Test Not Found</h2>
+          <p className="text-xs text-slate-500 mt-2">The test link may be invalid or was deleted by the creator.</p>
+          <button onClick={() => navigate('/tests')} className="mt-6 px-5 py-2.5 bg-blue-600 text-white rounded-xl text-xs font-bold shadow-xs">
+            Back to All Tests
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Access Control Check (Google Drive Model)
+  const isOwner = !test.ownerId || (user && test.ownerId === user.uid);
+  const isPrivate = test.visibility === 'private' || test.isPublic === false;
+  const isAccessDenied = isPrivate && !isOwner;
+
+  if (isAccessDenied) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950 p-6 font-sans">
+        <div className="max-w-md w-full text-center bg-white dark:bg-slate-900 rounded-3xl p-8 border border-slate-200 dark:border-slate-800 shadow-2xl">
+          <div className="w-16 h-16 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 rounded-2xl flex items-center justify-center text-amber-600 mx-auto mb-4">
+            <Lock className="w-8 h-8" />
+          </div>
+          <h2 className="text-xl font-black text-slate-900 dark:text-white">Exam Access Restricted</h2>
+          <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mt-1">{test.title}</p>
+          <p className="text-xs text-slate-500 mt-3 leading-relaxed">
+            This test has been marked as <strong>Private / Restricted</strong>. Only the creator has permission to take this exam.
+          </p>
+          <div className="mt-5 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-left text-xs text-slate-600 dark:text-slate-400">
+            <div className="flex items-center gap-1.5 font-bold text-slate-800 dark:text-slate-200 mb-1">
+              <User className="w-3.5 h-3.5 text-blue-600" />
+              <span>Owner: {test.ownerName || 'Verified User'}</span>
+            </div>
+            <p className="text-[11px] text-slate-500">
+              Ask the creator to change the test sharing setting to <strong>'Anyone with the link'</strong>.
+            </p>
+          </div>
+          <button 
+            onClick={() => navigate('/tests')}
+            className="mt-6 w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors"
+          >
+            Return to Dashboard
+          </button>
+        </div>
+      </div>
+    );
   }
 
   // Scheduled Test Waiting Room Screen if opened before scheduled start time
@@ -1148,24 +1279,30 @@ export default function MockTestInterface() {
              <p className="text-slate-500 text-sm mb-6 max-w-sm">
                Timer is frozen at <strong className="font-mono text-slate-800">{formatTime(timeLeft)}</strong>. Responses are saved.
              </p>
-             <div className="w-full flex flex-col gap-2">
+             <div className="w-full flex flex-col gap-2.5">
                <button 
                  onClick={() => { setIsPaused(false); syncSession({ isPaused: false }); }}
-                 className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-sm transition-colors flex items-center justify-center gap-2"
+                 className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm transition-colors flex items-center justify-center gap-2"
                >
-                 <Play className="w-4 h-4 fill-white" /> Resume
+                 <Play className="w-4 h-4 fill-white" /> Resume Test
+               </button>
+               <button 
+                 onClick={() => { setIsPaused(false); setShowConfirm('submit'); }}
+                 className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm transition-colors flex items-center justify-center gap-2"
+               >
+                 <CheckCircle2 className="w-4 h-4" /> End Test & View Results
                </button>
                <button 
                  onClick={() => { syncSession({ isPaused: true }); navigate(`/test-details/${test.id}`); }}
-                 className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-2"
+                 className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold text-sm transition-colors flex items-center justify-center gap-2"
                >
-                 <LogOut className="w-4 h-4" /> Save & Exit
+                 <LogOut className="w-4 h-4" /> Save & Exit (Resume Later)
                </button>
                <button 
                  onClick={() => setShowConfirm('restart')}
-                 className="w-full py-2 text-red-600 hover:bg-red-50 rounded-lg font-medium text-sm transition-colors flex items-center justify-center gap-1.5"
+                 className="w-full py-2 text-red-600 hover:bg-red-50 rounded-xl font-medium text-sm transition-colors flex items-center justify-center gap-1.5"
                >
-                 <RotateCcw className="w-3.5 h-3.5" /> Restart
+                 <RotateCcw className="w-3.5 h-3.5" /> Restart Test
                </button>
              </div>
            </div>
@@ -1182,8 +1319,8 @@ export default function MockTestInterface() {
               This will clear all your answers and restart the timer.
             </p>
             <div className="flex gap-3">
-              <button onClick={() => setShowConfirm(null)} className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg text-sm transition-colors">Cancel</button>
-              <button onClick={() => { setShowConfirm(null); handleRestartTest(); }} className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg text-sm transition-colors">Restart</button>
+              <button onClick={() => setShowConfirm(null)} className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-sm transition-colors">Cancel</button>
+              <button onClick={() => { setShowConfirm(null); handleRestartTest(); }} className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl text-sm transition-colors">Restart</button>
             </div>
           </div>
         </div>
@@ -1192,23 +1329,38 @@ export default function MockTestInterface() {
       {showConfirm === 'exit' && (
         <div className="absolute inset-0 z-50 bg-black/50 backdrop-blur-sm flex flex-col items-center justify-center p-4">
           <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl border border-slate-200">
-            <h3 className="text-base font-bold text-slate-800 mb-2 flex items-center gap-2 text-red-600">
-              <AlertCircle className="w-5 h-5" /> Exit Test?
+            <h3 className="text-base font-bold text-slate-800 mb-2 flex items-center gap-2">
+              <LogOut className="w-5 h-5 text-amber-500" /> Leave or End Test?
             </h3>
             <p className="text-sm text-slate-600 mb-5">
-              Your progress will be saved, but time continues unless paused.
+              Choose how you want to finish: you can submit to see your score right now, or save your progress to resume later.
             </p>
-            <div className="flex gap-3">
-              <button onClick={() => setShowConfirm(null)} className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg text-sm transition-colors">Cancel</button>
+            <div className="flex flex-col gap-2.5">
               <button 
                 onClick={() => {
                   setShowConfirm(null);
-                  if (testId) clearActiveTestSession(testId);
-                  if (user) saveToFirestore(user.uid, useStore.getState());
+                  handleSubmit();
+                }}
+                className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-sm transition-colors flex items-center justify-center gap-2"
+              >
+                <CheckCircle2 className="w-4 h-4" /> End Test & View Results Now
+              </button>
+              <button 
+                onClick={() => {
+                  setShowConfirm(null);
+                  syncSession({ isPaused: true });
                   navigate(`/test-details/${test.id}`);
                 }}
-                className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg text-sm transition-colors"
-              >Exit</button>
+                className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-sm transition-colors flex items-center justify-center gap-2"
+              >
+                <LogOut className="w-4 h-4" /> Save Progress & Resume Later
+              </button>
+              <button 
+                onClick={() => setShowConfirm(null)} 
+                className="w-full py-2 text-slate-500 hover:bg-slate-50 font-medium rounded-xl text-sm transition-colors"
+              >
+                Cancel (Keep Taking Test)
+              </button>
             </div>
           </div>
         </div>
@@ -1217,30 +1369,46 @@ export default function MockTestInterface() {
       {showConfirm === 'submit' && (
         <div className="absolute inset-0 z-50 bg-black/50 backdrop-blur-sm flex flex-col items-center justify-center p-4">
           <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl border border-slate-200">
-            <h3 className="text-xl font-bold text-slate-800 mb-4 text-center">Submit Test?</h3>
+            <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-3">
+              <CheckCircle2 className="w-6 h-6" />
+            </div>
+            <h3 className="text-xl font-bold text-slate-800 mb-1 text-center">Submit / End Test?</h3>
+            <p className="text-xs text-slate-500 text-center mb-5">
+              You can end your test now and view your comprehensive scorecard, accuracy, and solution explanations.
+            </p>
             
-            <div className="grid grid-cols-2 gap-3 mb-6">
-              <div className="bg-green-50 border border-green-100 rounded-lg p-3 text-center">
-                <div className="text-2xl font-bold text-green-600">{counts.answered + counts.answered_marked}</div>
-                <div className="text-xs font-semibold text-green-700 uppercase">Answered</div>
+            <div className="grid grid-cols-2 gap-2.5 mb-6">
+              <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-center">
+                <div className="text-2xl font-black text-emerald-600">{counts.answered + counts.answered_marked}</div>
+                <div className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider">Answered</div>
               </div>
-              <div className="bg-red-50 border border-red-100 rounded-lg p-3 text-center">
-                <div className="text-2xl font-bold text-red-600">{counts.unanswered}</div>
-                <div className="text-xs font-semibold text-red-700 uppercase">Unanswered</div>
+              <div className="bg-rose-50 border border-rose-100 rounded-xl p-3 text-center">
+                <div className="text-2xl font-black text-rose-600">{counts.unanswered}</div>
+                <div className="text-[11px] font-bold text-rose-700 uppercase tracking-wider">Unanswered</div>
               </div>
-              <div className="bg-purple-50 border border-purple-100 rounded-lg p-3 text-center">
-                <div className="text-2xl font-bold text-purple-600">{counts.marked}</div>
-                <div className="text-xs font-semibold text-purple-700 uppercase">Marked</div>
+              <div className="bg-purple-50 border border-purple-100 rounded-xl p-3 text-center">
+                <div className="text-2xl font-black text-purple-600">{counts.marked}</div>
+                <div className="text-[11px] font-bold text-purple-700 uppercase tracking-wider">Marked</div>
               </div>
-              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-center">
-                <div className="text-2xl font-bold text-slate-600">{counts.unvisited}</div>
-                <div className="text-xs font-semibold text-slate-700 uppercase">Not Visited</div>
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
+                <div className="text-2xl font-black text-slate-600">{counts.unvisited}</div>
+                <div className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Not Visited</div>
               </div>
             </div>
 
             <div className="flex gap-3">
-              <button onClick={() => setShowConfirm(null)} className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg text-sm transition-colors">Back</button>
-              <button onClick={() => { setShowConfirm(null); handleSubmit(); }} className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-sm transition-colors">Submit</button>
+              <button 
+                onClick={() => setShowConfirm(null)} 
+                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-sm transition-colors"
+              >
+                Resume Test
+              </button>
+              <button 
+                onClick={() => { setShowConfirm(null); handleSubmit(); }} 
+                className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-sm transition-colors flex items-center justify-center gap-1.5 shadow-sm"
+              >
+                <CheckCircle2 className="w-4 h-4" /> Submit & View Results
+              </button>
             </div>
           </div>
         </div>
@@ -1318,10 +1486,20 @@ export default function MockTestInterface() {
             {formatTime(isStrictSectional ? (sectionTimeLeft[currentSectionIndex] || 0) : timeLeft)}
           </div>
 
+          {/* End Test Button in Top Header */}
+          <button 
+            onClick={() => setShowConfirm('submit')} 
+            className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-lg transition-colors shadow-xs"
+            title="End test now and see results"
+          >
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+            <span className="hidden sm:inline">End Test</span>
+          </button>
+
           <div className="flex items-center gap-1 border-l border-slate-200 pl-2">
             <button title="Full Screen" onClick={handleToggleFullscreen} className="p-1.5 hover:bg-slate-100 rounded text-slate-600 hidden sm:block"><Maximize size={16}/></button>
             <button title={isPaused ? "Resume" : "Pause"} onClick={() => { const n = !isPaused; setIsPaused(n); syncSession({ isPaused: n }); }} className="p-1.5 hover:bg-slate-100 rounded text-slate-600 hidden sm:block">{isPaused ? <Play size={16}/> : <Pause size={16}/>}</button>
-            <button title="Exit" onClick={() => setShowConfirm('exit')} className="p-1.5 hover:bg-red-50 text-red-600 rounded hidden sm:block"><LogOut size={16}/></button>
+            <button title="Exit or End Test" onClick={() => setShowConfirm('exit')} className="p-1.5 hover:bg-red-50 text-red-600 rounded hidden sm:block"><LogOut size={16}/></button>
             <button onClick={() => setShowPalette(!showPalette)} className="lg:hidden p-1.5 hover:bg-slate-100 text-slate-600 rounded"><Menu size={18}/></button>
           </div>
         </div>
@@ -1386,9 +1564,9 @@ export default function MockTestInterface() {
                <span className="font-bold text-base sm:text-lg text-slate-800">Question {currentQuestionIndex + 1}</span>
                <div className="flex items-center gap-3 text-xs font-bold">
                   <div className="flex items-center gap-1 bg-slate-50 px-2 py-1 rounded">
-                    <span className="text-green-600">+1</span>
+                    <span className="text-green-600">+{positiveMarks}</span>
                     <span className="text-slate-300">|</span>
-                    <span className="text-red-500">-0.25</span>
+                    <span className="text-red-500">-{negativeMarks}</span>
                   </div>
                   <button 
                     onClick={() => setShowReportModal(true)}
@@ -1420,7 +1598,7 @@ export default function MockTestInterface() {
                     key={option.id} 
                     className={cn(
                       "flex items-start p-3 rounded-xl border-2 cursor-pointer transition-all",
-                      isSelected ? "bg-blue-50/50 border-blue-600" : "bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                      isSelected ? "bg-blue-50/50 border-blue-600 shadow-xs" : "bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50"
                     )}
                   >
                     <div className="flex items-center h-6 mt-0.5 mr-3">
@@ -1463,7 +1641,17 @@ export default function MockTestInterface() {
               </button>
             </div>
             
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2">
+              {/* End Test Button accessible on all questions */}
+              <button 
+                onClick={() => setShowConfirm('submit')}
+                className="px-3 sm:px-4 py-2 border border-emerald-300 bg-emerald-50 text-emerald-700 font-bold rounded-lg hover:bg-emerald-100 transition-colors text-xs sm:text-sm flex items-center gap-1"
+                title="End test now and view results"
+              >
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span className="hidden xs:inline">End Test</span>
+              </button>
+
               <button 
                 onClick={handlePrev}
                 disabled={currentQuestionIndex === 0}
@@ -1475,14 +1663,14 @@ export default function MockTestInterface() {
               {currentQuestionIndex === test.questions.length - 1 ? (
                 <button 
                   onClick={() => { handleNext(); setShowConfirm('submit'); }}
-                  className="px-5 sm:px-8 py-2 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 transition-colors text-xs sm:text-sm"
+                  className="px-5 sm:px-8 py-2 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-700 transition-colors text-xs sm:text-sm flex items-center gap-1 shadow-sm"
                 >
-                  Submit
+                  <CheckCircle2 className="w-4 h-4" /> Submit
                 </button>
               ) : (
                 <button 
                   onClick={handleNext}
-                  className="px-5 sm:px-8 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-colors text-xs sm:text-sm flex items-center gap-1"
+                  className="px-5 sm:px-8 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-colors text-xs sm:text-sm flex items-center gap-1 shadow-sm"
                   title="Shortcut: Enter"
                 >
                   Save & Next <ChevronRight className="w-4 h-4 hidden sm:block" />
@@ -1574,6 +1762,16 @@ export default function MockTestInterface() {
                 </div>
               );
             })}
+          </div>
+
+          {/* Bottom Submit Action inside Palette */}
+          <div className="p-3 bg-white border-t border-slate-200 shrink-0">
+            <button
+              onClick={() => setShowConfirm('submit')}
+              className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs sm:text-sm transition-colors flex items-center justify-center gap-2 shadow-sm"
+            >
+              <CheckCircle2 className="w-4 h-4 text-white" /> Submit / End Test
+            </button>
           </div>
         </aside>
       </div>

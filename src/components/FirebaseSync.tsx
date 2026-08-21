@@ -1,70 +1,75 @@
 import { useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useStore } from '../store/useStore';
-import { loadFromFirestore, saveToFirestore } from '../lib/firebaseSync';
+import { loadFromFirestore, saveToFirestore, subscribeToFirestore } from '../lib/firebaseSync';
 
 export function FirebaseSync() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const setIsInitialized = useStore((state) => state.setIsInitialized);
   const loadedOnce = useRef(false);
 
-  // Sync database whenever user changes
+  // Sync and subscribe to database whenever user changes
   useEffect(() => {
-    let active = true;
-    
-    async function syncData() {
-      if (user) {
-        await loadFromFirestore(user.uid);
-      } else {
-        // If not logged in, we are initialized as an empty state
-        useStore.setState({
-          tests: [],
-          attempts: [],
-          activeTestSessions: {},
-          bookmarks: {}
-        });
-      }
-      
-      if (active) {
+    if (loading) return; // Wait until Auth resolves
+
+    if (user) {
+      // 1. Initial load
+      loadFromFirestore(user.uid).then(() => {
         loadedOnce.current = true;
         setIsInitialized(true);
-      }
+      });
+
+      // 2. Real-time multi-device listener
+      const unsub = subscribeToFirestore(user.uid, () => {
+        loadedOnce.current = true;
+        setIsInitialized(true);
+      });
+
+      return () => {
+        unsub();
+      };
+    } else {
+      // If not logged in, empty state initialized
+      useStore.setState({
+        tests: [],
+        attempts: [],
+        activeTestSessions: {},
+        bookmarks: {}
+      });
+      loadedOnce.current = true;
+      setIsInitialized(true);
     }
-    
-    syncData();
-    
-    return () => {
-      active = false;
-    };
-  }, [user, setIsInitialized]);
+  }, [user, loading, setIsInitialized]);
 
   // Save to Firestore when store changes
   useEffect(() => {
     const unsub = useStore.subscribe((state) => {
-      if (!loadedOnce.current || !user) return;
+      if (!loadedOnce.current || !user || loading) return;
       saveToFirestore(user.uid, state);
     });
     return unsub;
-  }, [user]);
+  }, [user, loading]);
 
   // Periodic and visibility based sync
   useEffect(() => {
-    if (!user) return;
+    if (!user || loading) return;
 
     const interval = setInterval(() => {
       if (!loadedOnce.current) return;
       saveToFirestore(user.uid, useStore.getState());
-    }, 45000);
+    }, 30000);
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden' && loadedOnce.current) {
-        saveToFirestore(user.uid, useStore.getState());
+      if (document.visibilityState === 'visible' && loadedOnce.current) {
+        loadFromFirestore(user.uid);
+      } else if (document.visibilityState === 'hidden' && loadedOnce.current) {
+        saveToFirestore(user.uid, useStore.getState(), true);
       }
     };
     
     const handleOnline = () => {
       if (loadedOnce.current) {
-        saveToFirestore(user.uid, useStore.getState());
+        loadFromFirestore(user.uid);
       }
     };
 
@@ -76,8 +81,9 @@ export function FirebaseSync() {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('online', handleOnline);
     };
-  }, [user]);
+  }, [user, loading]);
 
   return null;
 }
+
 

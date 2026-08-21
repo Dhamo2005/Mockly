@@ -1,53 +1,188 @@
-import { doc, getDoc, setDoc, collection, getDocs, writeBatch } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, collection, getDocs, writeBatch, onSnapshot, Unsubscribe } from 'firebase/firestore';
 import { db } from '../contexts/AuthContext';
 import { useStore } from '../store/useStore';
 import { Test, TestAttempt, ActiveTestSession, Language } from '../types';
 
-let syncTimeout: any;
+let syncTimeout: any = null;
 
-export async function saveToFirestore(userId: string, state: any) {
+// Sanitize string to make safe Firestore document IDs
+export const sanitizeTestId = (rawId?: string): string => {
+  if (!rawId || typeof rawId !== 'string') {
+    return 'test_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+  }
+  const clean = rawId.trim().replace(/[\/\s#?\[\]*]+/g, '_').replace(/[^a-zA-Z0-9_\-\.:]/g, '');
+  return clean.length > 0 ? clean.substring(0, 128) : 'test_' + Date.now();
+};
+
+// Helper to remove undefined values and invalid properties which crash Firestore SDK
+export const cleanData = (obj: any) => {
+  if (obj === undefined) return null;
+  return JSON.parse(JSON.stringify(obj));
+};
+
+export async function deleteActiveSessionFromFirestore(userId: string, testId: string) {
+  if (!db || !userId || !testId) return;
+  try {
+    const cleanId = sanitizeTestId(testId);
+    await deleteDoc(doc(db, 'users', userId, 'activeSessions', cleanId));
+  } catch (e) {
+    console.warn('Failed to delete active session document from Firestore', e);
+  }
+}
+
+export async function deleteTestFromFirestore(testId: string) {
+  if (!db || !testId) return;
+  try {
+    const cleanId = sanitizeTestId(testId);
+    await deleteDoc(doc(db, 'tests', cleanId));
+  } catch (e) {
+    console.warn('Failed to delete test document from Firestore', e);
+  }
+}
+
+export async function fetchTestByIdFromFirestore(testId: string): Promise<Test | null> {
+  if (!db || !testId) return null;
+  try {
+    const cleanId = sanitizeTestId(testId);
+    const snap = await getDoc(doc(db, 'tests', cleanId));
+    if (snap.exists()) {
+      const data = snap.data() as Test;
+      return { ...data, id: snap.id };
+    }
+  } catch (e) {
+    console.warn(`Failed to fetch test ${testId} from Firestore:`, e);
+  }
+  return null;
+}
+
+export async function updateTestSharingInFirestore(
+  userId: string,
+  testId: string,
+  visibility: 'public' | 'private',
+  isPublic: boolean,
+  ownerInfo?: { ownerName?: string; ownerEmail?: string }
+): Promise<boolean> {
+  if (!db || !userId || !testId) return false;
+  try {
+    const cleanId = sanitizeTestId(testId);
+    const updates: any = {
+      visibility,
+      isPublic,
+      ownerId: userId,
+      ...(ownerInfo?.ownerName ? { ownerName: ownerInfo.ownerName } : {}),
+      ...(ownerInfo?.ownerEmail ? { ownerEmail: ownerInfo.ownerEmail } : {})
+    };
+    await setDoc(doc(db, 'tests', cleanId), cleanData(updates), { merge: true });
+    
+    // Update local store as well
+    useStore.getState().updateTest({
+      id: cleanId,
+      visibility,
+      isPublic,
+      ...(ownerInfo?.ownerName ? { ownerName: ownerInfo.ownerName } : {}),
+      ...(ownerInfo?.ownerEmail ? { ownerEmail: ownerInfo.ownerEmail } : {})
+    } as any);
+
+    return true;
+  } catch (e) {
+    console.error('Failed to update test sharing in Firestore:', e);
+    return false;
+  }
+}
+
+export async function saveTestToFirestore(userId: string, test: Test): Promise<boolean> {
+  if (!db || !userId || !test) return false;
+  try {
+    const cleanId = sanitizeTestId(test.id);
+    const testToSave = {
+      ...test,
+      id: cleanId,
+      ownerId: (test as any).ownerId || userId,
+      title: test.title || 'Untitled Test',
+      timeLimit: test.timeLimit || 3600,
+      visibility: test.visibility || 'public',
+      isPublic: test.isPublic !== undefined ? test.isPublic : (test.visibility !== 'private')
+    };
+    
+    await setDoc(doc(db, 'tests', cleanId), cleanData(testToSave), { merge: true });
+    return true;
+  } catch (e) {
+    console.error(`Failed to save test ${test.id} to Firestore:`, e);
+    return false;
+  }
+}
+
+export async function saveToFirestore(userId: string, state?: any, immediate: boolean = false) {
   if (!db || !userId) return;
-  if (syncTimeout) clearTimeout(syncTimeout);
   
-  syncTimeout = setTimeout(async () => {
+  if (syncTimeout) {
+    clearTimeout(syncTimeout);
+    syncTimeout = null;
+  }
+  
+  const executeSave = async () => {
     try {
       useStore.getState().setSyncStatus('saving');
-      
+      const currentState = state || useStore.getState();
+
+      // 1. Save tests directly in parallel to ensure reliability
+      if (currentState.tests && currentState.tests.length > 0) {
+        const testPromises = currentState.tests.map((test: Test) => {
+          if (test && test.id) {
+            const cleanId = sanitizeTestId(test.id);
+            const dataToSave = cleanData({
+              ...test,
+              id: cleanId,
+              ownerId: (test as any).ownerId || userId,
+              title: test.title || 'Untitled Test',
+              timeLimit: test.timeLimit || 3600
+            });
+            return setDoc(doc(db, 'tests', cleanId), dataToSave, { merge: true });
+          }
+          return Promise.resolve();
+        });
+        await Promise.allSettled(testPromises);
+      }
+
+      // 2. Batch write user preferences, attempts, and active sessions
       const batch = writeBatch(db);
 
-      // Save user data (bookmarks & language)
-      if (userId) {
-        const bookmarks = Object.keys(state.bookmarks || {}).filter(k => state.bookmarks[k]);
-        batch.set(doc(db, 'users', userId), {
-          bookmarks,
-          language: state.language || 'en'
-        }, { merge: true });
-      }
-
-      // Save tests
-      if (state.tests) {
-        for (const test of state.tests) {
-          if (test.id) {
-            batch.set(doc(db, 'tests', test.id), { ...test, ownerId: test.ownerId || userId }, { merge: true });
-          }
-        }
-      }
+      // Save user profile data
+      const bookmarks = Object.keys(currentState.bookmarks || {}).filter(k => currentState.bookmarks[k]);
+      batch.set(doc(db, 'users', userId), cleanData({
+        bookmarks,
+        language: currentState.language || 'en'
+      }), { merge: true });
 
       // Save attempts
-      if (state.attempts && userId) {
-        for (const attempt of state.attempts) {
-          if (attempt.id) {
-            batch.set(doc(db, 'users', userId, 'attempts', attempt.id), { ...attempt, userId }, { merge: true });
+      if (currentState.attempts && currentState.attempts.length > 0) {
+        for (const attempt of currentState.attempts) {
+          if (attempt && attempt.id) {
+            const cleanAttemptId = sanitizeTestId(attempt.id);
+            batch.set(doc(db, 'users', userId, 'attempts', cleanAttemptId), cleanData({ 
+              ...attempt, 
+              id: cleanAttemptId,
+              userId 
+            }), { merge: true });
           }
         }
       }
 
       // Save active sessions
-      if (state.activeTestSessions && userId) {
-        for (const testId of Object.keys(state.activeTestSessions)) {
+      if (currentState.activeTestSessions) {
+        const sessionKeys = Object.keys(currentState.activeTestSessions);
+        for (const testId of sessionKeys) {
           if (testId) {
-            const session = state.activeTestSessions[testId];
-            batch.set(doc(db, 'users', userId, 'activeSessions', testId), { ...session, userId }, { merge: true });
+            const session = currentState.activeTestSessions[testId];
+            if (session) {
+              const cleanSessionId = sanitizeTestId(testId);
+              batch.set(doc(db, 'users', userId, 'activeSessions', cleanSessionId), cleanData({ 
+                ...session, 
+                testId: cleanSessionId, 
+                userId,
+                lastUpdated: session.lastUpdated || Date.now() 
+              }), { merge: true });
+            }
           }
         }
       }
@@ -58,7 +193,107 @@ export async function saveToFirestore(userId: string, state: any) {
       console.error('Failed to save to Firestore', e);
       useStore.getState().setSyncStatus('error');
     }
-  }, 2000);
+  };
+
+  if (immediate) {
+    await executeSave();
+  } else {
+    syncTimeout = setTimeout(executeSave, 500);
+  }
+}
+
+export function subscribeToFirestore(userId: string, onInitialLoaded?: () => void): () => void {
+  if (!db || !userId) return () => {};
+
+  const unsubs: Unsubscribe[] = [];
+  let isInitialLoad = true;
+
+  try {
+    // 1. Real-time Tests Listener
+    const unsubTests = onSnapshot(collection(db, 'tests'), (snap) => {
+      const remoteTests: Test[] = [];
+      snap.docs.forEach((d) => {
+        const data = d.data() as Test;
+        if (data && data.id) {
+          remoteTests.push({ ...data, id: d.id });
+        }
+      });
+
+      // Update tests in store
+      useStore.setState((state) => {
+        // Create map of remote tests
+        const map = new Map<string, Test>();
+        remoteTests.forEach(t => map.set(t.id, t));
+        
+        return { tests: Array.from(map.values()) };
+      });
+
+      if (isInitialLoad) {
+        isInitialLoad = false;
+        if (onInitialLoaded) onInitialLoaded();
+      }
+      useStore.getState().setSyncStatus('synced', Date.now());
+    }, (err) => {
+      console.warn('Real-time tests listener error:', err);
+    });
+    unsubs.push(unsubTests);
+
+    // 2. Real-time Attempts Listener
+    const unsubAttempts = onSnapshot(collection(db, 'users', userId, 'attempts'), (snap) => {
+      const remoteAttempts: TestAttempt[] = [];
+      snap.docs.forEach((d) => {
+        const data = d.data() as TestAttempt;
+        if (data && data.id) {
+          remoteAttempts.push(data);
+        }
+      });
+      useStore.setState({ attempts: remoteAttempts });
+    }, (err) => {
+      console.warn('Real-time attempts listener error:', err);
+    });
+    unsubs.push(unsubAttempts);
+
+    // 3. Real-time Active Sessions Listener
+    const unsubSessions = onSnapshot(collection(db, 'users', userId, 'activeSessions'), (snap) => {
+      const remoteSessions: Record<string, ActiveTestSession> = {};
+      snap.docs.forEach((d) => {
+        remoteSessions[d.id] = d.data() as ActiveTestSession;
+      });
+      useStore.setState({ activeTestSessions: remoteSessions });
+    }, (err) => {
+      console.warn('Real-time sessions listener error:', err);
+    });
+    unsubs.push(unsubSessions);
+
+    // 4. Real-time User Preferences Listener
+    const unsubUser = onSnapshot(doc(db, 'users', userId), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data() || {};
+        const bookmarks: Record<string, boolean> = {};
+        if (Array.isArray(data.bookmarks)) {
+          data.bookmarks.forEach((b: string) => {
+            if (b) bookmarks[b] = true;
+          });
+        }
+        const language: Language = data.language || 'en';
+        useStore.setState({ bookmarks, language });
+      }
+    }, (err) => {
+      console.warn('Real-time user listener error:', err);
+    });
+    unsubs.push(unsubUser);
+
+  } catch (e) {
+    console.error('Failed to setup Firestore real-time subscriptions:', e);
+  }
+
+  return () => {
+    unsubs.forEach(unsub => {
+      try {
+        unsub();
+      } catch (e) {}
+    });
+  };
 }
 
 export async function loadFromFirestore(userId: string) {
@@ -79,7 +314,7 @@ export async function loadFromFirestore(userId: string) {
 
     // Load tests
     const testsSnap = await getDocs(collection(db, 'tests'));
-    const tests = testsSnap.docs.map(d => d.data() as Test);
+    const tests = testsSnap.docs.map(d => ({ ...(d.data() as Test), id: d.id }));
     
     // Load attempts
     const attemptsSnap = await getDocs(collection(db, 'users', userId, 'attempts'));
@@ -103,10 +338,11 @@ export async function loadFromFirestore(userId: string) {
     useStore.getState().setSyncStatus('synced', Date.now());
   } catch (e: any) {
     if (e.message && e.message.includes('the client is offline')) {
-       console.error('Failed to load from Firestore (client is offline). This usually means the domain is not authorized in Firebase or network is down.', e);
+       console.error('Failed to load from Firestore (client is offline).', e);
     } else {
        console.error('Failed to load from Firestore', e);
     }
     useStore.getState().setSyncStatus('error');
   }
 }
+

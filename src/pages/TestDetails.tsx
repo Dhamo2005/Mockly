@@ -2,20 +2,28 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useStore } from '../store/useStore';
-import { PlayCircle, ArrowLeft, Clock, FileText, BarChart, ChevronRight, Trash2, Sliders, ShieldCheck, Sparkles, Download, AlarmClock, RotateCcw, Calendar, AlertCircle, ArrowLeftRight } from 'lucide-react';
+import { 
+  PlayCircle, ArrowLeft, Clock, FileText, BarChart, ChevronRight, 
+  Trash2, Sliders, ShieldCheck, Sparkles, Download, AlarmClock, 
+  RotateCcw, Calendar, AlertCircle, ArrowLeftRight, Share2, Globe, Lock, ShieldAlert, User
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Ripple } from '../components/Ripple';
 import { ExamPersonalityModal } from '../components/ExamPersonalityModal';
-import { getAccessToken } from '../contexts/AuthContext';
-import { saveToFirestore } from '../lib/firebaseSync';
+import { ShareTestModal } from '../components/ShareTestModal';
+import { useAuth } from '../contexts/AuthContext';
+import { saveToFirestore, deleteTestFromFirestore, fetchTestByIdFromFirestore } from '../lib/firebaseSync';
 
 export default function TestDetails() {
+  const { user } = useAuth();
   const { testId } = useParams();
   const navigate = useNavigate();
-  const { tests, attempts, deleteTest, deleteAttempt, updateTest, activeTestSessions, clearActiveTestSession } = useStore();
+  const { tests, attempts, deleteTest, deleteAttempt, updateTest, activeTestSessions, clearActiveTestSession, importTests } = useStore();
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [attemptToDelete, setAttemptToDelete] = useState<string | null>(null);
   const [showPersonalityModal, setShowPersonalityModal] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [isFetchingRemote, setIsFetchingRemote] = useState(false);
   
   // Real-time clock for scheduled countdowns
   const [currentTime, setCurrentTime] = useState(Date.now());
@@ -25,6 +33,23 @@ export default function TestDetails() {
     }, 1000);
     return () => clearInterval(timer);
   }, []);
+
+  const test = tests.find(t => t.id === testId);
+
+  // If opened directly from a shared link and not yet in store, fetch from Firestore
+  useEffect(() => {
+    if (!test && testId && !isFetchingRemote) {
+      setIsFetchingRemote(true);
+      fetchTestByIdFromFirestore(testId).then((fetchedTest) => {
+        if (fetchedTest) {
+          importTests([fetchedTest]);
+        }
+        setIsFetchingRemote(false);
+      }).catch(() => {
+        setIsFetchingRemote(false);
+      });
+    }
+  }, [test, testId, isFetchingRemote, importTests]);
 
   
   
@@ -82,7 +107,6 @@ export default function TestDetails() {
     downloadAnchorNode.remove();
   };
 
-  const test = tests.find(t => t.id === testId);
   const testAttempts = attempts.filter(a => a.testId === testId && a.completed).sort((a, b) => (b.endTime || 0) - (a.endTime || 0));
   const latestAttempt = testAttempts[0];
 
@@ -105,12 +129,76 @@ export default function TestDetails() {
   }, [test]);
 
   if (!test) {
+    if (isFetchingRemote) {
+      return (
+        <div className="w-full max-w-md mx-auto text-center py-20 flex flex-col items-center">
+          <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4" />
+          <h2 className="text-lg font-bold text-slate-800">Loading Shared Mock Test...</h2>
+          <p className="text-xs text-slate-500 mt-1">Retrieving test paper securely from Firebase.</p>
+        </div>
+      );
+    }
+
     return (
-      <div className="w-full max-w-7xl mx-auto text-center py-12">
-        <h2 className="text-xl font-bold text-slate-900">Test not found</h2>
-        <button onClick={() => navigate('/tests')} className="mt-4 text-blue-600 hover:underline">
-          Back to Tests
+      <div className="w-full max-w-md mx-auto text-center py-16 px-4">
+        <div className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4 text-slate-400">
+          <AlertCircle className="w-7 h-7" />
+        </div>
+        <h2 className="text-xl font-bold text-slate-900">Test Not Found</h2>
+        <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+          The requested test link may be invalid, deleted, or you may not have permission to view it.
+        </p>
+        <button onClick={() => navigate('/tests')} className="mt-6 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-colors shadow-xs">
+          Back to All Tests
         </button>
+      </div>
+    );
+  }
+
+  // Access Control Check (Google Drive Model)
+  const isOwner = !test.ownerId || (user && test.ownerId === user.uid);
+  const isPrivate = test.visibility === 'private' || test.isPublic === false;
+  const isAccessDenied = isPrivate && !isOwner;
+
+  if (isAccessDenied) {
+    return (
+      <div className="w-full max-w-lg mx-auto text-center py-16 px-6 font-sans">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="bg-white rounded-3xl p-8 border border-slate-200 shadow-xl flex flex-col items-center"
+        >
+          <div className="w-16 h-16 bg-amber-50 border border-amber-100 rounded-2xl flex items-center justify-center text-amber-600 mb-5 shadow-xs">
+            <Lock className="w-8 h-8" />
+          </div>
+          <h2 className="text-2xl font-black text-slate-800 tracking-tight">Access Restricted</h2>
+          <p className="text-sm font-semibold text-slate-700 mt-2">{test.title}</p>
+          <p className="text-xs text-slate-500 mt-3 leading-relaxed max-w-sm">
+            This test has been marked as <strong>Private (Restricted)</strong> by its creator. Only the owner has permission to open and take this mock exam.
+          </p>
+
+          <div className="mt-6 w-full p-4 rounded-2xl bg-slate-50 border border-slate-100 text-left text-xs text-slate-600 space-y-2">
+            <div className="flex items-center gap-2 font-bold text-slate-800">
+              <User className="w-4 h-4 text-blue-600" />
+              <span>Creator Info</span>
+            </div>
+            <p className="text-[11px] text-slate-500 pl-6">
+              Owner: {test.ownerName || 'Verified User'}{test.ownerEmail ? ` (${test.ownerEmail})` : ''}
+            </p>
+            <p className="text-[11px] text-slate-500 pl-6">
+              To request access, please contact the test creator and ask them to change general access to <strong>'Anyone with the link'</strong>.
+            </p>
+          </div>
+
+          <div className="flex gap-3 mt-6 w-full">
+            <button
+              onClick={() => navigate('/tests')}
+              className="flex-1 py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition-colors shadow-xs"
+            >
+              Browse Other Tests
+            </button>
+          </div>
+        </motion.div>
       </div>
     );
   }
@@ -128,6 +216,8 @@ export default function TestDetails() {
     hidden: { opacity: 0, y: 10 },
     show: { opacity: 1, y: 0 }
   };
+
+  const isPublic = test.visibility === 'public' || (test.visibility !== 'private' && test.isPublic !== false);
 
   return (
     <div className="w-full max-w-7xl mx-auto font-sans">
@@ -159,6 +249,15 @@ export default function TestDetails() {
                 </div>
                 
                 <div className="flex items-center justify-start sm:justify-end gap-1.5 shrink-0 w-full sm:w-auto border-t sm:border-0 border-slate-100 pt-3 sm:pt-0 mt-2 sm:mt-0">
+                  <button
+                    onClick={() => setShowShareModal(true)}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200/80 cursor-pointer shadow-2xs"
+                    title="Share Test Link (Public / Private Options)"
+                  >
+                    <Share2 className="w-3.5 h-3.5" />
+                    <span>Share</span>
+                  </button>
+
                   <button
                     onClick={() => setShowPersonalityModal(true)}
                     className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-transparent hover:border-blue-100"
@@ -202,7 +301,22 @@ export default function TestDetails() {
                 </div>
               </div>
 
-              <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-slate-50">
+              <div className="flex flex-wrap items-center gap-2 mt-4 pt-4 border-t border-slate-50">
+                {/* Visibility Badge */}
+                <button
+                  type="button"
+                  onClick={() => setShowShareModal(true)}
+                  className={`flex items-center gap-1 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider rounded-md border transition-all cursor-pointer ${
+                    isPublic
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                      : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+                  }`}
+                  title="Click to manage sharing permissions"
+                >
+                  {isPublic ? <Globe className="w-3 h-3 text-emerald-600" /> : <Lock className="w-3 h-3 text-amber-600" />}
+                  <span>{isPublic ? 'Public Link' : 'Private / Restricted'}</span>
+                </button>
+
                 <span className="px-2 py-0.5 bg-slate-100 text-slate-600 text-[11px] font-bold uppercase tracking-wider rounded border border-slate-200">Medium</span>
                 {test.examCategory && (
                   <span className="px-2 py-0.5 bg-blue-50 text-blue-700 text-[11px] font-bold uppercase tracking-wider rounded border border-blue-200">{test.examCategory}</span>
@@ -535,10 +649,17 @@ export default function TestDetails() {
                     Cancel
                   </button>
                   <button
-                    onClick={() => {
-                      if (test) deleteTest(test.id);
-                      setShowDeleteModal(false);
-                      navigate('/tests');
+                    onClick={async () => {
+                      if (test) {
+                        const idToDelete = test.id;
+                        deleteTest(idToDelete);
+                        setShowDeleteModal(false);
+                        if (user?.uid) {
+                          await deleteTestFromFirestore(idToDelete);
+                          saveToFirestore(user.uid, null, true);
+                        }
+                        navigate('/tests');
+                      }
                     }}
                     className="flex-1 py-3 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold transition-colors shadow-sm text-sm"
                   >
@@ -608,6 +729,15 @@ export default function TestDetails() {
               ...updatedFields
             });
           }}
+        />
+      )}
+
+      {/* Google Drive-style Share Test Modal */}
+      {test && (
+        <ShareTestModal
+          test={test}
+          isOpen={showShareModal}
+          onClose={() => setShowShareModal(false)}
         />
       )}
     </div>

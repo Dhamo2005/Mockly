@@ -135,6 +135,11 @@ export interface Test {
   examCategory?: string;
   positiveMarks?: number;
   negativeMarks?: number;
+  ownerId?: string;
+  ownerName?: string;
+  ownerEmail?: string;
+  visibility?: 'public' | 'private' | 'unlisted';
+  isPublic?: boolean;
   exam?: ExamMetadata;
   scoring?: ScoringConfig;
   settings?: MockTestSettings;

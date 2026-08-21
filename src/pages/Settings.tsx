@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Settings as SettingsIcon, Save, Trash2, LogOut, LogIn, HardDrive, ShieldAlert, Cloud } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useAuth } from '../contexts/AuthContext';
-import { saveToFirestore, loadFromFirestore } from '../lib/firebaseSync';
+import { saveToFirestore, loadFromFirestore, deleteTestFromFirestore } from '../lib/firebaseSync';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function Settings() {
@@ -85,7 +85,7 @@ export default function Settings() {
                <div className="bg-slate-50 border border-slate-100 p-5 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
                   <div className="text-center sm:text-left">
                      <p className="font-bold text-slate-800">{user.displayName}</p>
-                     <p className="text-sm text-slate-500 mt-1">{user.displayName}</p>
+                     <p className="text-sm text-slate-500 mt-1">{user.email}</p>
                   </div>
                   <button 
                     onClick={signOut}
@@ -219,11 +219,20 @@ export default function Settings() {
                     Cancel
                   </button>
                   <button
-                    onClick={() => {
+                    onClick={async () => {
+                      const testsToDelete = [...tests];
                       if (confirmAction === 'all') clearAllData();
                       if (confirmAction === 'tests') clearTests();
                       if (confirmAction === 'attempts') clearAttempts();
                       setConfirmAction(null);
+                      if (user?.uid) {
+                        if (confirmAction === 'all' || confirmAction === 'tests') {
+                          for (const t of testsToDelete) {
+                            await deleteTestFromFirestore(t.id);
+                          }
+                        }
+                        saveToFirestore(user.uid, null, true);
+                      }
                     }}
                     className="flex-1 py-3 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold transition-colors shadow-sm text-sm"
                   >

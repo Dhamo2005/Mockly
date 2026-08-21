@@ -8,7 +8,9 @@ import { useStore } from '../store/useStore';
 
 export const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 export const auth = getAuth(app);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+export const db = firebaseConfig.firestoreDatabaseId === '(default)' 
+  ? getFirestore(app) 
+  : getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
 // Initialize Firebase Analytics if supported in current environment
 export let analytics: any = null;
@@ -23,8 +25,6 @@ if (typeof window !== 'undefined') {
 }
 
 const provider = new GoogleAuthProvider();
-provider.addScope('https://www.googleapis.com/auth/drive.appdata');
-provider.addScope('https://www.googleapis.com/auth/drive.file');
 provider.addScope('profile');
 provider.addScope('email');
 
@@ -45,9 +45,6 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
-
-let cachedAccessToken: string | null = null;
-export const getAccessToken = () => cachedAccessToken;
 
 let activeSignInPromise: Promise<void> | null = null;
 
@@ -88,11 +85,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        const storedToken = localStorage.getItem('mockly_token');
-        if (storedToken && !cachedAccessToken) {
-           cachedAccessToken = storedToken;
-        }
-
         setUser({
           uid: firebaseUser.uid,
           email: firebaseUser.email || '',
@@ -100,7 +92,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           photoURL: firebaseUser.photoURL || '',
         });
       } else {
-        cachedAccessToken = null;
         setUser(null);
       }
       setLoading(false);
@@ -122,12 +113,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     activeSignInPromise = (async () => {
       try {
-        const result = await signInWithPopup(auth, provider);
-        const credential = GoogleAuthProvider.credentialFromResult(result);
-        if (credential?.accessToken) {
-          cachedAccessToken = credential.accessToken;
-          localStorage.setItem('mockly_token', credential.accessToken);
-        }
+        await signInWithPopup(auth, provider);
       } catch (error: any) {
         const msg = error?.message || String(error || '');
         const code = error?.code;
@@ -159,8 +145,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.error('Sign out error:', e);
     }
     setUser(null);
-    cachedAccessToken = null;
-    localStorage.removeItem('mockly_token');
     useStore.getState().clearAllData();
   };
 

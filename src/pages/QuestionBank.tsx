@@ -2,14 +2,18 @@ import React, { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { useStore } from '../store/useStore';
-import { Upload, FileJson, Download, CheckCircle2, AlertCircle, Trash2, Database, ShieldCheck, Sliders, Sparkles, AlarmClock, ArrowLeftRight } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+import { saveTestToFirestore, saveToFirestore, deleteTestFromFirestore, sanitizeTestId } from '../lib/firebaseSync';
+import { Upload, FileJson, Download, CheckCircle2, AlertCircle, Trash2, Database, ShieldCheck, Sliders, Sparkles, AlarmClock, ArrowLeftRight, Share2, Globe, Lock } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { Test, Question } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { ExamPersonalityModal } from '../components/ExamPersonalityModal';
+import { ShareTestModal } from '../components/ShareTestModal';
 
 export default function QuestionBank() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { tests, importTests, deleteTest, clearTests, updateTest } = useStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState<{ type: 'success' | 'error' | null, message: string }>({ type: null, message: '' });
@@ -17,6 +21,7 @@ export default function QuestionBank() {
   const [testToDelete, setTestToDelete] = useState<{ id: string; title: string } | null>(null);
   const [showClearAllModal, setShowClearAllModal] = useState(false);
   const [testToEditPersonality, setTestToEditPersonality] = useState<Test | null>(null);
+  const [testToShare, setTestToShare] = useState<Test | null>(null);
   const [pendingImportTests, setPendingImportTests] = useState<any[] | null>(null);
 
   
@@ -469,7 +474,15 @@ export default function QuestionBank() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      onClick={() => setTestToShare(test)}
+                      className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors border border-transparent hover:border-blue-200"
+                      title="Share Mock Test"
+                    >
+                      <Share2 className="w-4 h-4" />
+                    </button>
+
                     <button
                       onClick={() => setTestToEditPersonality(test)}
                       className="px-3 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl transition-all flex items-center gap-1.5"
@@ -538,9 +551,14 @@ export default function QuestionBank() {
                     Cancel
                   </button>
                   <button
-                    onClick={() => {
-                      deleteTest(testToDelete.id);
+                    onClick={async () => {
+                      const idToDelete = testToDelete.id;
+                      deleteTest(idToDelete);
                       setTestToDelete(null);
+                      if (user?.uid) {
+                        await deleteTestFromFirestore(idToDelete);
+                        saveToFirestore(user.uid, null, true);
+                      }
                     }}
                     className="flex-1 py-3 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold transition-colors shadow-sm text-sm"
                   >
@@ -580,9 +598,16 @@ export default function QuestionBank() {
                     Cancel
                   </button>
                   <button
-                    onClick={() => {
+                    onClick={async () => {
+                      const testsToDelete = [...tests];
                       clearTests();
                       setShowClearAllModal(false);
+                      if (user?.uid) {
+                        for (const t of testsToDelete) {
+                          await deleteTestFromFirestore(t.id);
+                        }
+                        saveToFirestore(user.uid, null, true);
+                      }
                     }}
                     className="flex-1 py-3 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold transition-colors shadow-sm text-sm"
                   >
@@ -605,26 +630,62 @@ export default function QuestionBank() {
             if (pendingImportTests) setPendingImportTests(null);
           }}
           test={testToEditPersonality}
-          onSave={(updatedFields) => {
+          onSave={async (updatedFields) => {
             if (pendingImportTests) {
-              const finalizedTests = pendingImportTests.map(t => ({
-                ...t,
-                ...updatedFields,
-                settings: { ...t.settings, ...(updatedFields.settings || {}) }
-              }));
+              const finalizedTests: Test[] = pendingImportTests.map(t => {
+                const cleanId = sanitizeTestId(t.id || uuidv4());
+                return {
+                  ...t,
+                  id: cleanId,
+                  ownerId: user?.uid || (t as any).ownerId,
+                  ownerName: user?.displayName || 'Creator',
+                  ownerEmail: user?.email || '',
+                  visibility: t.visibility || 'public',
+                  isPublic: t.isPublic !== undefined ? t.isPublic : true,
+                  ...updatedFields,
+                  settings: { ...t.settings, ...(updatedFields.settings || {}) }
+                };
+              });
+
               importTests(finalizedTests);
-              setStatus({ type: 'success', message: `Successfully imported ${finalizedTests.length} test paper(s).` });
+              
+              if (user?.uid) {
+                for (const t of finalizedTests) {
+                  await saveTestToFirestore(user.uid, t);
+                }
+                saveToFirestore(user.uid, null, true);
+              }
+
+              setStatus({ type: 'success', message: `Successfully imported ${finalizedTests.length} test paper(s) & synced across all devices.` });
               setTimeout(() => setStatus({ type: null, message: '' }), 4000);
               setPendingImportTests(null);
             } else {
-              updateTest({
+              const updatedTest: Test = {
                 ...testToEditPersonality,
+                id: sanitizeTestId(testToEditPersonality.id),
+                ownerId: user?.uid || (testToEditPersonality as any).ownerId,
+                ownerName: user?.displayName || testToEditPersonality.ownerName || 'Creator',
+                ownerEmail: user?.email || testToEditPersonality.ownerEmail || '',
                 ...updatedFields,
                 settings: { ...testToEditPersonality.settings, ...(updatedFields.settings || {}) }
-              });
+              };
+              updateTest(updatedTest);
+              if (user?.uid) {
+                await saveTestToFirestore(user.uid, updatedTest);
+                saveToFirestore(user.uid, null, true);
+              }
             }
             setTestToEditPersonality(null);
           }}
+        />
+      )}
+
+      {/* Google Drive-style Share Test Modal */}
+      {testToShare && (
+        <ShareTestModal
+          test={testToShare}
+          isOpen={!!testToShare}
+          onClose={() => setTestToShare(null)}
         />
       )}
     </motion.div>

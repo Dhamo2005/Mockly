@@ -1,23 +1,34 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '../store/useStore';
+import { useAuth } from '../contexts/AuthContext';
+import { deleteTestFromFirestore, saveToFirestore } from '../lib/firebaseSync';
 import { useNavigate } from 'react-router-dom';
-import { PlayCircle, Globe, DownloadCloud, Trash2, BookOpen, Clock, AlignLeft, AlarmClock, Database, ArrowLeftRight } from 'lucide-react';
+import { PlayCircle, Globe, DownloadCloud, Trash2, BookOpen, Clock, AlignLeft, AlarmClock, Database, ArrowLeftRight, Share2, Lock } from 'lucide-react';
 import { Ripple } from '../components/Ripple';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
+import { ShareTestModal } from '../components/ShareTestModal';
+import { Test } from '../types';
 import QuestionBank from './QuestionBank';
 
 export default function Tests() {
+  const { user } = useAuth();
   const { tests, deleteTest, activeTestSessions } = useStore();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'imported' | 'online'>('imported');
   const [testToDelete, setTestToDelete] = useState<{ id: string; title: string } | null>(null);
+  const [testToShare, setTestToShare] = useState<Test | null>(null);
 
-  const handleDeleteConfirm = () => {
+  const handleDeleteConfirm = async () => {
     if (testToDelete) {
-      deleteTest(testToDelete.id);
+      const idToDelete = testToDelete.id;
+      deleteTest(idToDelete);
       setTestToDelete(null);
+      if (user?.uid) {
+        await deleteTestFromFirestore(idToDelete);
+        saveToFirestore(user.uid, null, true);
+      }
     }
   };
 
@@ -141,7 +152,17 @@ export default function Tests() {
                       </div>
                     </div>
                     
-                    <div className="flex items-center gap-2 sm:ml-0 ml-10 shrink-0">
+                    <div className="flex items-center gap-1.5 sm:ml-0 ml-10 shrink-0">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setTestToShare(test);
+                        }}
+                        className="p-1.5 text-slate-400 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition-colors border border-transparent hover:border-blue-200"
+                        title="Share Mock Test"
+                      >
+                        <Share2 className="w-4 h-4" />
+                      </button>
                       <button 
                         onClick={(e) => {
                           e.stopPropagation();
@@ -253,6 +274,14 @@ export default function Tests() {
           )}
         </AnimatePresence>,
         document.body
+      )}
+      {/* Google Drive-style Share Test Modal */}
+      {testToShare && (
+        <ShareTestModal
+          test={testToShare}
+          isOpen={!!testToShare}
+          onClose={() => setTestToShare(null)}
+        />
       )}
     </div>
   );
