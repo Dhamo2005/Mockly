@@ -1,18 +1,37 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Settings as SettingsIcon, Save, Trash2, LogOut, LogIn, HardDrive, ShieldAlert, Cloud } from 'lucide-react';
+import { Settings as SettingsIcon, Save, Trash2, LogOut, LogIn, HardDrive, ShieldAlert, Cloud, CheckCircle2, Folder, RefreshCw, Sparkles, ExternalLink, Loader2 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useAuth } from '../contexts/AuthContext';
+import { useGoogleDrive } from '../contexts/GoogleDriveContext';
 import { saveToFirestore, loadFromFirestore, deleteTestFromFirestore } from '../lib/firebaseSync';
+import { GoogleDrivePickerModal } from '../components/GoogleDrivePickerModal';
+import { formatDate, formatDateTime } from '../lib/dateUtils';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function Settings() {
   const { clearAllData, clearTests, clearAttempts, tests, attempts } = useStore();
   const { user, isSigningIn, signInWithGoogle, signOut } = useAuth();
+  const {
+    isConnected: isDriveConnected,
+    isConnecting: isDriveConnecting,
+    isSyncing: isDriveSyncing,
+    autoSync: isDriveAutoSync,
+    lastSyncTime: driveLastSyncTime,
+    files: driveFiles,
+    statusMessage: driveStatusMessage,
+    connect: connectDrive,
+    disconnect: disconnectDrive,
+    backupToDrive,
+    restoreFromDrive,
+    toggleAutoSync: toggleDriveAutoSync,
+    refreshFiles: refreshDriveFiles,
+  } = useGoogleDrive();
   
   const [syncStatus, setSyncStatus] = useState<string>('');
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [confirmAction, setConfirmAction] = useState<'all' | 'tests' | 'attempts' | null>(null);
+  const [showDriveModal, setShowDriveModal] = useState(false);
 
   const handleForceSync = async () => {
     if (!user) return;
@@ -43,25 +62,186 @@ export default function Settings() {
       className="w-full max-w-5xl mx-auto space-y-6"
     >
       <div className="pt-2">
-        <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Settings</h2>
-        <p className="text-slate-500 text-sm mt-1">Manage your account and preferences.</p>
+        <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Settings & Storage</h2>
+        <p className="text-slate-500 text-sm mt-1">Manage cloud backups, Google Drive storage, and data preferences.</p>
       </div>
       
       <div className="space-y-6">
-        {/* Sync Settings */}
+        {/* Google Drive Storage Section (Primary Free Personal Storage) */}
+        <section className="bg-white rounded-2xl p-6 md:p-8 border border-slate-200/80 shadow-sm relative overflow-hidden">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-2xl shadow-sm">
+                <HardDrive className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-lg font-bold text-slate-800">Google Drive Personal Storage</h3>
+                  <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-200">
+                    100% Free &amp; Private
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Save tests and history directly to your own Google Drive in the <strong>"Mockly App Data"</strong> folder.
+                </p>
+              </div>
+            </div>
+
+            {isDriveConnected ? (
+              <div className="flex items-center gap-2">
+                <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  Connected
+                </span>
+                <button
+                  onClick={disconnectDrive}
+                  className="text-xs font-bold text-slate-500 hover:text-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 transition-colors"
+                >
+                  Disconnect
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => connectDrive()}
+                disabled={isDriveConnecting}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 disabled:opacity-60"
+              >
+                {isDriveConnecting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Sparkles className="w-4 h-4" />
+                )}
+                <span>Connect Google Drive</span>
+              </button>
+            )}
+          </div>
+
+          {/* Drive Connected Status & Controls */}
+          {isDriveConnected ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="p-4 bg-slate-50 border border-slate-100 rounded-xl">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">Stored Files</span>
+                  <span className="text-lg font-bold text-slate-800 mt-0.5 block">{driveFiles.length} files in Drive</span>
+                  <span className="text-xs text-slate-500">Folder: Mockly App Data</span>
+                </div>
+
+                <div className="p-4 bg-slate-50 border border-slate-100 rounded-xl">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">Last Synced</span>
+                  <span className="text-sm font-bold text-slate-800 mt-1 block">
+                    {driveLastSyncTime ? formatDateTime(driveLastSyncTime) : 'Not synced yet'}
+                  </span>
+                  <span className="text-xs text-slate-500">Manual or Auto-sync</span>
+                </div>
+
+                <div className="p-4 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-between">
+                  <div>
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">Auto-Sync</span>
+                    <span className="text-xs font-bold text-slate-700 mt-1 block">
+                      {isDriveAutoSync ? 'Enabled (Every update)' : 'Disabled (Manual)'}
+                    </span>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      className="sr-only peer"
+                      checked={isDriveAutoSync}
+                      onChange={(e) => toggleDriveAutoSync(e.target.checked)}
+                    />
+                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                <motion.button
+                  whileHover={{ scale: 1.01 }}
+                  whileTap={{ scale: 0.99 }}
+                  onClick={() => backupToDrive()}
+                  disabled={isDriveSyncing}
+                  className="flex-1 bg-slate-900 text-white px-5 py-3.5 rounded-xl font-bold hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 shadow-sm text-sm disabled:opacity-60"
+                >
+                  {isDriveSyncing ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Save className="w-4 h-4 text-emerald-400" />
+                  )}
+                  <span>Backup All to Google Drive</span>
+                </motion.button>
+
+                <motion.button
+                  whileHover={{ scale: 1.01 }}
+                  whileTap={{ scale: 0.99 }}
+                  onClick={() => restoreFromDrive()}
+                  disabled={isDriveSyncing}
+                  className="flex-1 bg-blue-50 text-blue-700 border border-blue-200 px-5 py-3.5 rounded-xl font-bold hover:bg-blue-100 transition-colors flex items-center justify-center gap-2 text-sm disabled:opacity-60"
+                >
+                  <Cloud className="w-4 h-4" />
+                  <span>Restore from Google Drive</span>
+                </motion.button>
+
+                <motion.button
+                  whileHover={{ scale: 1.01 }}
+                  whileTap={{ scale: 0.99 }}
+                  onClick={() => setShowDriveModal(true)}
+                  className="px-5 py-3.5 bg-slate-100 text-slate-700 font-bold rounded-xl hover:bg-slate-200 transition-colors flex items-center justify-center gap-2 text-sm"
+                >
+                  <Folder className="w-4 h-4 text-amber-600" />
+                  <span>Browse Drive Files ({driveFiles.length})</span>
+                </motion.button>
+              </div>
+
+              {/* Status Message */}
+              <AnimatePresence>
+                {driveStatusMessage && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    className={`p-3.5 rounded-xl text-center text-xs font-bold border ${
+                      driveStatusMessage.type === 'success'
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                        : driveStatusMessage.type === 'error'
+                        ? 'bg-red-50 text-red-800 border-red-200'
+                        : 'bg-blue-50 text-blue-800 border-blue-200'
+                    }`}
+                  >
+                    {driveStatusMessage.text}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          ) : (
+            <div className="bg-slate-50 border border-slate-200/60 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600">
+              <div className="flex items-center gap-2.5">
+                <Folder className="w-4 h-4 text-amber-500 shrink-0" />
+                <span>Google Drive will store all your tests, questions, and attempt records in a dedicated folder in your Google Drive without costing anything.</span>
+              </div>
+              <button
+                onClick={() => connectDrive()}
+                className="font-bold text-blue-600 hover:underline shrink-0"
+              >
+                Connect Now &rarr;
+              </button>
+            </div>
+          )}
+        </section>
+
+        {/* Account & Firebase Sync */}
         <section className="bg-white rounded-2xl p-6 md:p-8 border border-slate-100 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
           <div className="flex items-center gap-3 mb-6">
             <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl">
               <Cloud className="w-5 h-5" />
             </div>
-            <h3 className="text-lg font-bold text-slate-800">Cloud Sync</h3>
+            <h3 className="text-lg font-bold text-slate-800">Account &amp; Firebase Profile</h3>
           </div>
           
           {!user ? (
              <div className="bg-slate-50 border border-slate-100 p-5 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div className="text-center sm:text-left">
                    <p className="font-bold text-slate-800">Not signed in</p>
-                   <p className="text-sm text-slate-500 mt-1">Sign in to securely sync your data across devices.</p>
+                   <p className="text-sm text-slate-500 mt-1">Sign in to securely access your tests and profile.</p>
                 </div>
                 <motion.button 
                   whileHover={{ scale: isSigningIn ? 1 : 1.02 }}
@@ -102,7 +282,7 @@ export default function Settings() {
                    onClick={handleForceSync}
                    className="flex-1 bg-slate-800 text-white px-6 py-4 rounded-xl font-bold hover:bg-slate-900 transition-colors flex items-center justify-center gap-2 shadow-sm"
                  >
-                   <Save className="w-5 h-5" /> Backup to Cloud
+                   <Save className="w-5 h-5" /> Backup to Firebase
                  </motion.button>
                  <motion.button 
                    whileHover={{ scale: 1.01 }}
@@ -110,7 +290,7 @@ export default function Settings() {
                    onClick={handleForceLoad}
                    className="flex-1 bg-blue-50 text-blue-700 px-6 py-4 rounded-xl font-bold hover:bg-blue-100 transition-colors flex items-center justify-center gap-2 border border-blue-200/50"
                  >
-                   <Cloud className="w-5 h-5" /> Restore Backup
+                   <Cloud className="w-5 h-5" /> Restore from Firebase
                  </motion.button>
                </div>
                
@@ -141,7 +321,7 @@ export default function Settings() {
               <div className="p-2.5 bg-red-100 text-red-600 rounded-xl">
                 <Trash2 className="w-5 h-5" />
               </div>
-              <h3 className="text-lg font-bold text-red-900">Record Management & Danger Zone</h3>
+              <h3 className="text-lg font-bold text-red-900">Record Management &amp; Danger Zone</h3>
             </div>
             
             <p className="text-red-700 text-sm mb-6 max-w-lg leading-relaxed">
@@ -182,10 +362,16 @@ export default function Settings() {
               onClick={() => setConfirmAction('all')}
               className="w-full bg-red-600 text-white px-6 py-4 rounded-xl font-bold hover:bg-red-700 transition-colors flex items-center justify-center gap-2 shadow-sm text-sm"
             >
-              <Trash2 className="w-5 h-5" /> Purge & Clear All Local Data
+              <Trash2 className="w-5 h-5" /> Purge &amp; Clear All Local Data
             </button>
           </div>
         </section>
+
+      {/* Google Drive Picker Modal */}
+      <GoogleDrivePickerModal
+        isOpen={showDriveModal}
+        onClose={() => setShowDriveModal(false)}
+      />
 
       {/* Confirmation Modal */}
       {createPortal(

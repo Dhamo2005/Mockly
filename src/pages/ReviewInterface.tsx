@@ -25,7 +25,8 @@ import {
   ExternalLink,
   BookOpen,
   ArrowRight,
-  Calendar
+  Calendar,
+  HardDrive
 } from 'lucide-react';
 import { getTestDisplayDate } from '../lib/dateUtils';
 import { cn, getLocalizedText } from '../lib/utils';
@@ -502,11 +503,27 @@ export default function ReviewInterface() {
         </div>
 
         {/* 3. ATTEMPT NOTICE BANNER */}
-        <div className="bg-[#f1f5f9] border border-slate-200/80 rounded-xl px-4 py-2.5 flex items-center gap-2 text-xs sm:text-sm text-slate-600 font-medium">
-          <Info className="w-4 h-4 text-slate-400 shrink-0" />
-          <span>
-            Attempt {currentAttemptIndex} was made on {formattedAttemptDate}
-          </span>
+        <div className="bg-[#f1f5f9] border border-slate-200/80 rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs sm:text-sm text-slate-600 font-medium">
+          <div className="flex items-center gap-2">
+            <Info className="w-4 h-4 text-slate-400 shrink-0" />
+            <span>
+              Attempt {currentAttemptIndex} was made on {formattedAttemptDate}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {currentAttempt.durationMs !== undefined && (
+              <span className="text-[11px] font-mono text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200">
+                Duration: {Math.floor(currentAttempt.durationMs / 60000)}m {Math.floor((currentAttempt.durationMs % 60000) / 1000)}s
+              </span>
+            )}
+            {currentAttempt.savedToDriveAt ? (
+              <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                <HardDrive className="w-3 h-3 text-emerald-600" />
+                <span>Google Drive Synced</span>
+              </div>
+            ) : null}
+          </div>
         </div>
 
         {/* ========================================================= */}

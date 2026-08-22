@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useStore } from '../store/useStore';
 import { loadFromFirestore, saveToFirestore, subscribeToFirestore } from '../lib/firebaseSync';
+import { isDriveConnected } from '../lib/googleDriveSync';
 
 export function FirebaseSync() {
   const { user, loading } = useAuth();
@@ -38,25 +39,29 @@ export function FirebaseSync() {
     }
   }, [user, loading, setIsInitialized]);
 
-  // Save to Firestore when store changes
+  // Save to Firestore when store changes (only if Google Drive is not connected or as occasional fallback)
   useEffect(() => {
     const unsub = useStore.subscribe((state) => {
       if (!loadedOnce.current || !user || loading) return;
+      // If user prioritized Google Drive, avoid frequent Firestore calls on every micro-mutation
+      if (isDriveConnected()) return;
       saveToFirestore(user.uid, state);
     });
     return unsub;
   }, [user, loading]);
 
-  // Periodic and visibility based sync
+  // Periodic and visibility based sync (only when Drive is not the active primary)
   useEffect(() => {
     if (!user || loading) return;
 
     const interval = setInterval(() => {
       if (!loadedOnce.current) return;
+      if (isDriveConnected()) return; // Google Drive is primary storage
       saveToFirestore(user.uid, useStore.getState());
     }, 30000);
 
     const handleVisibilityChange = () => {
+      if (isDriveConnected()) return;
       if (document.visibilityState === 'visible' && loadedOnce.current) {
         loadFromFirestore(user.uid);
       } else if (document.visibilityState === 'hidden' && loadedOnce.current) {
@@ -65,7 +70,7 @@ export function FirebaseSync() {
     };
     
     const handleOnline = () => {
-      if (loadedOnce.current) {
+      if (loadedOnce.current && !isDriveConnected()) {
         loadFromFirestore(user.uid);
       }
     };

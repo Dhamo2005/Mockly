@@ -179,11 +179,54 @@ export interface ProductionMockTestBundle {
 
 export type QuestionStatus = 'unvisited' | 'visited' | 'answered' | 'unanswered' | 'not_answered' | 'marked' | 'marked_for_review' | 'answered_marked' | 'answered_and_marked';
 
+export interface TestActionEvent {
+  id: string;
+  type: 
+    | 'test_start'
+    | 'answer_select'
+    | 'answer_clear'
+    | 'mark_review'
+    | 'unmark_review'
+    | 'save_and_next'
+    | 'mark_and_next'
+    | 'jump_question'
+    | 'switch_section'
+    | 'pause'
+    | 'resume'
+    | 'test_submit'
+    | 'report_question'
+    | 'sync_heartbeat';
+  questionId?: string;
+  questionIndex?: number;
+  sectionIndex?: number;
+  sectionName?: string;
+  optionId?: string | null;
+  previousOptionId?: string | null;
+  status?: QuestionStatus;
+  timestamp: number; // authoritative unix timestamp (ms)
+  isoTimestamp: string;
+  timeSpentOnQuestionSeconds?: number;
+  timeLeftAtActionSeconds?: number;
+}
+
+export interface QuestionTimestampMeta {
+  firstVisitedAt?: number;
+  lastVisitedAt?: number;
+  lastAnsweredAt?: number;
+  markedAt?: number;
+  unmarkedAt?: number;
+  totalTimeSpentSeconds: number;
+  actionCount: number;
+}
+
 export interface UserQuestionAttempt {
   selectedOptionId?: string | null;
   status: QuestionStatus;
   markedForReview: boolean;
   timeSpent: number; // in seconds
+  firstVisitedAt?: number;
+  lastAnsweredAt?: number;
+  actionCount?: number;
 }
 
 export interface TestAttempt {
@@ -191,6 +234,7 @@ export interface TestAttempt {
   testId: string;
   startTime: number;
   endTime?: number;
+  durationMs?: number;
   answers: Record<string, string>; 
   statuses: Record<string, QuestionStatus>; 
   timeSpent: Record<string, number>; 
@@ -200,7 +244,11 @@ export interface TestAttempt {
   correctAnswers: number;
   incorrectAnswers: number;
   userAttempts?: Record<string, UserQuestionAttempt>;
+  actionLogs?: TestActionEvent[];
+  questionTimestamps?: Record<string, QuestionTimestampMeta>;
+  savedToDriveAt?: number;
   createdAt?: number | string;
+  updatedAt?: number | string;
 }
 
 export interface ActiveTestSession {
@@ -217,11 +265,15 @@ export interface ActiveTestSession {
   timeSpent: Record<string, number>;
   isPaused: boolean;
   reportedQuestions?: Record<string, { reason: string; comment?: string }>;
+  actionLogs?: TestActionEvent[];
+  questionTimestamps?: Record<string, QuestionTimestampMeta>;
   lastUpdated: number;
   startTime?: number;
   endTime?: number;
   scheduledStartTime?: number;
   scheduledEndTime?: number;
+  cloudSyncSource?: 'google_drive' | 'local_fallback';
+  syncTimestamp?: number;
 }
 
 

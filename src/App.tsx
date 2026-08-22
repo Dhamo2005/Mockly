@@ -15,11 +15,18 @@ import { useAuth } from './contexts/AuthContext';
 
 import firebaseConfig from '../firebase-applet-config.json';
 
+import { initDB } from './lib/db';
+
 const AuthGuard = ({ children }: { children: React.ReactNode }) => {
   const { user, loading, isSigningIn, authError, signInWithGoogle } = useAuth();
   const projectId = firebaseConfig?.projectId || 'your-firebase-project';
+  const [dbReady, setDbReady] = React.useState(false);
 
-  if (loading) {
+  React.useEffect(() => {
+    initDB().then(() => setDbReady(true)).catch(console.error);
+  }, []);
+
+  if (loading || !dbReady) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
         <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />

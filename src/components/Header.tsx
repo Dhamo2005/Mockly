@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { BookOpen, LogOut, LogIn, Settings, PlayCircle, X } from 'lucide-react';
+import { BookOpen, LogOut, LogIn, Settings, PlayCircle, X, HardDrive, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useGoogleDrive } from '../contexts/GoogleDriveContext';
 import { useHeader } from '../contexts/HeaderContext';
 import { useStore } from '../store/useStore';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
@@ -9,6 +10,7 @@ import { saveToFirestore } from '../lib/firebaseSync';
 
 export const Header = () => {
   const { user, isSigningIn, signInWithGoogle, signOut } = useAuth();
+  const { isConnected: isDriveConnected, isSyncing: isDriveSyncing, backupToDrive } = useGoogleDrive();
   const { headerContent } = useHeader();
   const { activeTestSessions, tests, attempts, clearActiveTestSession } = useStore();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -163,8 +165,23 @@ export const Header = () => {
         </div>
       )}
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 sm:gap-3">
         {headerContent}
+
+        {/* Quick Google Drive Backup / Status icon */}
+        <button
+          onClick={() => isDriveConnected ? backupToDrive() : navigate('/settings')}
+          disabled={isDriveSyncing}
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold border transition-all ${
+            isDriveConnected
+              ? 'bg-emerald-50/80 text-emerald-700 border-emerald-200 hover:bg-emerald-100/80'
+              : 'bg-slate-50 text-slate-500 border-slate-200 hover:text-slate-800 hover:bg-slate-100'
+          }`}
+          title={isDriveConnected ? (isDriveSyncing ? 'Syncing to Drive...' : 'Google Drive Connected — Click to Sync Backup') : 'Connect Google Drive (Settings)'}
+        >
+          <HardDrive className={`w-3.5 h-3.5 ${isDriveSyncing ? 'animate-spin text-emerald-600' : (isDriveConnected ? 'text-emerald-600' : 'text-slate-400')}`} />
+          <span className="hidden md:inline">{isDriveConnected ? (isDriveSyncing ? 'Syncing...' : 'Drive') : 'Drive Off'}</span>
+        </button>
         
         {user ? (
           <div className="relative" ref={dropdownRef}>
@@ -189,12 +206,24 @@ export const Header = () => {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 5 }}
                   transition={{ duration: 0.1 }}
-                  className="absolute right-0 mt-2 w-48 bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden z-50 py-1 origin-top-right"
+                  className="absolute right-0 mt-2 w-52 bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden z-50 py-1 origin-top-right"
                 >
                   <div className="px-4 py-2 border-b border-slate-100 mb-1 bg-slate-50">
                     <p className="text-[11px] font-bold text-slate-800 truncate">{user.displayName}</p>
+                    <p className="text-[10px] text-slate-400 truncate">{user.email}</p>
                   </div>
                   
+                  <button
+                    onClick={() => {
+                      setIsDropdownOpen(false);
+                      navigate('/settings');
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 hover:text-blue-700 transition-colors w-full text-left"
+                  >
+                    <HardDrive className="w-3.5 h-3.5 text-indigo-500" />
+                    Google Drive Storage
+                  </button>
+
                   <button
                     onClick={() => {
                       setIsDropdownOpen(false);

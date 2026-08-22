@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useStore } from '../store/useStore';
-import { QuestionStatus, TestAttempt, Language } from '../types';
+import { QuestionStatus, TestAttempt, Language, TestActionEvent, QuestionTimestampMeta } from '../types';
 import { Ripple } from '../components/Ripple';
 import { 
   BookOpen, Clock, AlertTriangle, AlertCircle, Play, Pause, 
   RotateCcw, RefreshCw, LogOut, CheckCircle2, Maximize, Menu,
   X, Cloud, CloudOff, Plus, Minus, Search, ChevronRight, ChevronLeft, Check, Flag, Circle,
-  ArrowLeft, Calendar, ShieldCheck, Lock, Globe, User
+  ArrowLeft, Calendar, ShieldCheck, Lock, Globe, User, HardDrive
 } from 'lucide-react';
 import { cn, getLocalizedText } from '../lib/utils';
 import { v4 as uuidv4 } from 'uuid';
@@ -16,6 +16,7 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import { useAuth } from '../contexts/AuthContext';
+import { useGoogleDrive } from '../contexts/GoogleDriveContext';
 import { saveToFirestore, deleteActiveSessionFromFirestore, fetchTestByIdFromFirestore } from '../lib/firebaseSync';
 
 export default function MockTestInterface() {
@@ -24,6 +25,18 @@ export default function MockTestInterface() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const forceFresh = searchParams.get('fresh') === 'true' || searchParams.get('restart') === 'true';
+
+  const { 
+    isConnected: isDriveConnected, 
+    isConnecting: isDriveConnecting, 
+    liveSyncStatus, 
+    liveSyncLastSaved,
+    connect: connectDrive, 
+    syncLiveSession, 
+    loadLiveSession, 
+    deleteLiveSession, 
+    saveCompletedAttempt 
+  } = useGoogleDrive();
 
   const { 
     tests, 
@@ -111,6 +124,8 @@ export default function MockTestInterface() {
   const currentSectionIndexRef = useRef(currentSectionIndex);
   const reportedQuestionsRef = useRef<Record<string, { reason: string; comment?: string }>>({});
   const lastTickTimestampRef = useRef<number>(Date.now());
+  const actionLogsRef = useRef<TestActionEvent[]>([]);
+  const questionTimestampsRef = useRef<Record<string, QuestionTimestampMeta>>({});
 
   useEffect(() => { timeLeftRef.current = timeLeft; }, [timeLeft]);
   useEffect(() => { sectionTimeLeftRef.current = sectionTimeLeft; }, [sectionTimeLeft]);
@@ -121,6 +136,69 @@ export default function MockTestInterface() {
   useEffect(() => { isSubmittedRef.current = isSubmitted; }, [isSubmitted]);
   useEffect(() => { currentQuestionIndexRef.current = currentQuestionIndex; }, [currentQuestionIndex]);
   useEffect(() => { currentSectionIndexRef.current = currentSectionIndex; }, [currentSectionIndex]);
+
+  // High-precision authoritative timestamp action recorder
+  const recordAction = useCallback((
+    type: TestActionEvent['type'],
+    details?: Partial<TestActionEvent>
+  ) => {
+    const now = Date.now();
+    const isoTimestamp = new Date(now).toISOString();
+    const q = details?.questionId 
+      ? test?.questions.find(x => x.id === details.questionId) 
+      : test?.questions[currentQuestionIndexRef.current];
+    const qId = q?.id;
+
+    const actionItem: TestActionEvent = {
+      id: uuidv4(),
+      type,
+      questionId: qId,
+      questionIndex: details?.questionIndex ?? currentQuestionIndexRef.current,
+      sectionIndex: details?.sectionIndex ?? currentSectionIndexRef.current,
+      sectionName: details?.sectionName ?? q?.section,
+      optionId: details?.optionId,
+      previousOptionId: details?.previousOptionId,
+      status: details?.status,
+      timestamp: now,
+      isoTimestamp,
+      timeSpentOnQuestionSeconds: qId ? (timeSpentRef.current[qId] || 0) : undefined,
+      timeLeftAtActionSeconds: timeLeftRef.current,
+    };
+
+    actionLogsRef.current = [...(actionLogsRef.current || []), actionItem];
+
+    if (qId) {
+      const existingMeta = questionTimestampsRef.current[qId] || {
+        firstVisitedAt: now,
+        lastVisitedAt: now,
+        totalTimeSpentSeconds: 0,
+        actionCount: 0,
+      };
+
+      const updatedMeta: QuestionTimestampMeta = {
+        ...existingMeta,
+        lastVisitedAt: now,
+        totalTimeSpentSeconds: timeSpentRef.current[qId] || 0,
+        actionCount: (existingMeta.actionCount || 0) + 1,
+        firstVisitedAt: existingMeta.firstVisitedAt || now,
+      };
+
+      if (type === 'answer_select') {
+        updatedMeta.lastAnsweredAt = now;
+      } else if (type === 'mark_review' || type === 'mark_and_next') {
+        updatedMeta.markedAt = now;
+      } else if (type === 'unmark_review' || type === 'answer_clear') {
+        updatedMeta.unmarkedAt = now;
+      }
+
+      questionTimestampsRef.current = {
+        ...questionTimestampsRef.current,
+        [qId]: updatedMeta,
+      };
+    }
+
+    return actionItem;
+  }, [test]);
 
   // Modals and Reports
   const [showReportModal, setShowReportModal] = useState(false);
@@ -154,6 +232,7 @@ export default function MockTestInterface() {
   // Helper to persist current active test session cleanly
   const syncSession = (overrides?: any) => {
     if (!testId || !test || isSubmitted) return;
+    const now = Date.now();
     const sessionData = {
       testId,
       currentQuestionIndex: currentQuestionIndexRef.current,
@@ -161,244 +240,306 @@ export default function MockTestInterface() {
       timeLeft: timeLeftRef.current,
       sectionTimeLeft: sectionTimeLeftRef.current,
       sectionDurations: sectionDurationsRef.current,
+      sectionStartTimes: sectionStartTimesRef.current,
+      sectionEndTimes: sectionEndTimesRef.current,
       answers: answersRef.current,
       statuses: statusesRef.current,
       timeSpent: timeSpentRef.current,
       isPaused: isPausedRef.current,
       reportedQuestions: reportedQuestionsRef.current,
+      actionLogs: actionLogsRef.current,
+      questionTimestamps: questionTimestampsRef.current,
       startTime: sessionStartTimeRef.current,
       endTime: sessionEndTimeRef.current,
       scheduledStartTime: test.settings?.scheduledStartTime,
       scheduledEndTime: test.settings?.scheduledEndTime,
-      lastUpdated: Date.now(),
+      lastUpdated: now,
+      syncTimestamp: now,
+      cloudSyncSource: isDriveConnected ? 'google_drive' : 'local_fallback',
       ...overrides
     };
     updateActiveTestSession(testId, sessionData);
     try {
       localStorage.setItem('mockly_active_session_' + testId, JSON.stringify(sessionData));
     } catch (e) {}
-    if (user) saveToFirestore(user.uid, useStore.getState());
+
+    // Priority 1: Google Drive Sync - auto-save every action in real time
+    if (isDriveConnected) {
+      syncLiveSession(testId, test.title, sessionData);
+    } else if (user) {
+      saveToFirestore(user.uid, useStore.getState());
+    }
   };
 
-  // Restore session on mount or refresh using exact timestamps
+  // Restore session on mount or refresh using exact timestamps & Drive cloud reconciliation
   useEffect(() => {
     if (!testId || !test || isLoadedRef.current || isBeforeScheduledStart) return;
 
-    // Check existing session from store or immediate localStorage backup
-    let rawSession = activeTestSessions[testId];
-    if (!rawSession) {
-      try {
-        const localSaved = localStorage.getItem('mockly_active_session_' + testId);
-        if (localSaved) {
-          rawSession = JSON.parse(localSaved);
+    let isCancelled = false;
+
+    async function initializeSession() {
+      // 1. Check Google Drive for latest saved session if connected
+      let cloudDriveSession: any = null;
+      if (isDriveConnected && !forceFresh) {
+        try {
+          cloudDriveSession = await loadLiveSession(testId, test.title);
+        } catch (e) {
+          console.warn('Drive live session check skipped/failed:', e);
         }
-      } catch (e) {}
-    }
-
-    // If no active session found AND store is still initializing, wait for DB hydration
-    if (!rawSession && !isInitialized && !forceFresh) {
-      return;
-    }
-
-    const activeSession = forceFresh ? undefined : rawSession;
-    if (forceFresh) {
-      clearActiveTestSession(testId);
-      try {
-        localStorage.removeItem('mockly_active_session_' + testId);
-      } catch (e) {}
-    }
-
-    const extractedSections = Array.from(new Set(test.questions.map(q => q.section)));
-    const sectionDurations: Record<number, number> = {};
-    extractedSections.forEach((secName, idx) => {
-      const secDef = Array.isArray(test.sections) ? test.sections.find((s: any) => (typeof s === 'object' ? s.name === secName : s === secName)) : undefined;
-      sectionDurations[idx] = (secDef && typeof secDef === 'object' && secDef.timeLimit) 
-        ? secDef.timeLimit 
-        : Math.floor(test.timeLimit / Math.max(1, extractedSections.length));
-    });
-    sectionDurationsRef.current = sectionDurations;
-
-    const now = Date.now();
-
-    let sTime = now;
-    let eTime = now + (test.timeLimit * 1000);
-    let calculatedTimeLeft = test.timeLimit;
-
-    if (isScheduledTest) {
-      sTime = scheduledStartTime;
-      eTime = scheduledEndTime;
-      calculatedTimeLeft = Math.max(0, Math.ceil((eTime - now) / 1000));
-    } else if (activeSession) {
-      const elapsedSinceLastUpdate = activeSession.isPaused 
-        ? 0 
-        : Math.max(0, Math.floor((now - (activeSession.lastUpdated || now)) / 1000));
-
-      if (activeSession.isPaused) {
-        calculatedTimeLeft = activeSession.timeLeft ?? test.timeLimit;
-        eTime = now + (calculatedTimeLeft * 1000);
-        sTime = activeSession.startTime || (now - ((test.timeLimit - calculatedTimeLeft) * 1000));
-      } else if (activeSession.endTime && activeSession.endTime > now) {
-        calculatedTimeLeft = Math.max(0, Math.ceil((activeSession.endTime - now) / 1000));
-        eTime = activeSession.endTime;
-        sTime = activeSession.startTime || (eTime - (test.timeLimit * 1000));
-      } else if (activeSession.timeLeft !== undefined) {
-        calculatedTimeLeft = Math.max(0, activeSession.timeLeft - elapsedSinceLastUpdate);
-        eTime = now + (calculatedTimeLeft * 1000);
-        sTime = activeSession.startTime || (now - ((test.timeLimit - calculatedTimeLeft) * 1000));
       }
-    }
 
-    sessionStartTimeRef.current = sTime;
-    sessionEndTimeRef.current = eTime;
+      if (isCancelled) return;
 
-    // Calculate section start and end windows
-    const sTimes: Record<number, number> = {};
-    const eTimes: Record<number, number> = {};
-    let cumulativeSec = 0;
-    extractedSections.forEach((_, idx) => {
-      const dur = sectionDurations[idx] || 900;
-      sTimes[idx] = sTime + (cumulativeSec * 1000);
-      eTimes[idx] = sTime + ((cumulativeSec + dur) * 1000);
-      cumulativeSec += dur;
-    });
-    sectionStartTimesRef.current = sTimes;
-    sectionEndTimesRef.current = eTimes;
-
-    // If test scheduled end time has already elapsed, auto-submit
-    if (isScheduledTest && now >= eTime) {
-      setTimeLeft(0);
-      timeLeftRef.current = 0;
-      if (activeSession) {
-        setAnswers(activeSession.answers || {});
-        setStatuses(activeSession.statuses || {});
-        setTimeSpent(activeSession.timeSpent || {});
+      // 2. Check existing session from store or fallback
+      let rawSession = activeTestSessions[testId];
+      if (cloudDriveSession && cloudDriveSession.lastUpdated) {
+        if (!rawSession || ((cloudDriveSession.lastUpdated || 0) >= (rawSession.lastUpdated || 0))) {
+          rawSession = cloudDriveSession;
+        }
       }
-      isLoadedRef.current = true;
-      setTimeout(() => {
-        handleSubmitRef.current?.();
-      }, 100);
-      return;
-    }
-    
-    setTimeLeft(calculatedTimeLeft);
-    timeLeftRef.current = calculatedTimeLeft;
 
-    // Section calculations based on current timestamp
-    let calculatedSectionIndex = 0;
-    const initialSectionTimes: Record<number, number> = {};
+      if (!rawSession) {
+        try {
+          const localSaved = localStorage.getItem('mockly_active_session_' + testId);
+          if (localSaved) {
+            rawSession = JSON.parse(localSaved);
+          }
+        } catch (e) {}
+      }
 
-    if (isScheduledTest) {
-      extractedSections.forEach((_, idx) => {
-        initialSectionTimes[idx] = Math.max(0, Math.ceil((eTimes[idx] - now) / 1000));
-        if (now >= sTimes[idx] && now < eTimes[idx]) {
-          calculatedSectionIndex = idx;
+      // If no active session found AND store is still initializing, wait for DB hydration
+      if (!rawSession && !isInitialized && !forceFresh && !isDriveConnected) {
+        return;
+      }
+
+      const activeSession = forceFresh ? undefined : rawSession;
+      if (forceFresh) {
+        clearActiveTestSession(testId);
+        try {
+          localStorage.removeItem('mockly_active_session_' + testId);
+        } catch (e) {}
+      }
+
+      const extractedSections = Array.from(new Set(test.questions.map(q => q.section)));
+      const sectionDurations: Record<number, number> = {};
+      extractedSections.forEach((secName, idx) => {
+        const secDef = Array.isArray(test.sections) ? test.sections.find((s: any) => (typeof s === 'object' ? s.name === secName : s === secName)) : undefined;
+        sectionDurations[idx] = (secDef && typeof secDef === 'object' && secDef.timeLimit) 
+          ? secDef.timeLimit 
+          : Math.floor(test.timeLimit / Math.max(1, extractedSections.length));
+      });
+      sectionDurationsRef.current = sectionDurations;
+
+      const now = Date.now();
+
+      let sTime = now;
+      let eTime = now + (test.timeLimit * 1000);
+      let calculatedTimeLeft = test.timeLimit;
+
+      if (isScheduledTest) {
+        sTime = scheduledStartTime;
+        eTime = scheduledEndTime;
+        calculatedTimeLeft = Math.max(0, Math.ceil((eTime - now) / 1000));
+      } else if (activeSession) {
+        const elapsedSinceLastUpdate = activeSession.isPaused 
+          ? 0 
+          : Math.max(0, Math.floor((now - (activeSession.lastUpdated || now)) / 1000));
+
+        if (activeSession.isPaused) {
+          calculatedTimeLeft = activeSession.timeLeft ?? test.timeLimit;
+          eTime = now + (calculatedTimeLeft * 1000);
+          sTime = activeSession.startTime || (now - ((test.timeLimit - calculatedTimeLeft) * 1000));
+        } else if (activeSession.endTime && activeSession.endTime > now) {
+          calculatedTimeLeft = Math.max(0, Math.ceil((activeSession.endTime - now) / 1000));
+          eTime = activeSession.endTime;
+          sTime = activeSession.startTime || (eTime - (test.timeLimit * 1000));
+        } else if (activeSession.timeLeft !== undefined) {
+          calculatedTimeLeft = Math.max(0, activeSession.timeLeft - elapsedSinceLastUpdate);
+          eTime = now + (calculatedTimeLeft * 1000);
+          sTime = activeSession.startTime || (now - ((test.timeLimit - calculatedTimeLeft) * 1000));
         }
-      });
-    } else if (activeSession?.sectionTimeLeft && Object.keys(activeSession.sectionTimeLeft).length > 0) {
-      const elapsedSinceLastUpdate = activeSession.isPaused 
-        ? 0 
-        : Math.max(0, Math.floor((now - (activeSession.lastUpdated || now)) / 1000));
+      }
 
+      sessionStartTimeRef.current = sTime;
+      sessionEndTimeRef.current = eTime;
+
+      // Calculate section start and end windows based on timestamps
+      const sTimes: Record<number, number> = {};
+      const eTimes: Record<number, number> = {};
+      let cumulativeSec = 0;
       extractedSections.forEach((_, idx) => {
-        const prevSecTime = activeSession.sectionTimeLeft?.[idx] ?? sectionDurations[idx] ?? 900;
-        if (idx === (activeSession.currentSectionIndex ?? 0) && !activeSession.isPaused && isStrictSectional) {
-          initialSectionTimes[idx] = Math.max(0, prevSecTime - elapsedSinceLastUpdate);
-        } else {
-          initialSectionTimes[idx] = prevSecTime;
+        const dur = sectionDurations[idx] || 900;
+        sTimes[idx] = sTime + (cumulativeSec * 1000);
+        eTimes[idx] = sTime + ((cumulativeSec + dur) * 1000);
+        cumulativeSec += dur;
+      });
+      sectionStartTimesRef.current = sTimes;
+      sectionEndTimesRef.current = eTimes;
+
+      // If test scheduled end time has already elapsed, auto-submit
+      if (isScheduledTest && now >= eTime) {
+        setTimeLeft(0);
+        timeLeftRef.current = 0;
+        if (activeSession) {
+          setAnswers(activeSession.answers || {});
+          setStatuses(activeSession.statuses || {});
+          setTimeSpent(activeSession.timeSpent || {});
         }
-      });
-      calculatedSectionIndex = activeSession.currentSectionIndex || 0;
-    } else {
-      extractedSections.forEach((_, idx) => {
-        initialSectionTimes[idx] = sectionDurations[idx] || 900;
-      });
-    }
-    setSectionTimeLeft(initialSectionTimes);
-    sectionTimeLeftRef.current = initialSectionTimes;
-
-    lastTickTimestampRef.current = Date.now();
-
-    if (activeSession) {
-      const targetSecIdx = (isStrictSectional && !canSwitchSections && isScheduledTest) 
-        ? calculatedSectionIndex 
-        : (activeSession.currentSectionIndex ?? 0);
-      setCurrentSectionIndex(targetSecIdx);
-      currentSectionIndexRef.current = targetSecIdx;
+        isLoadedRef.current = true;
+        setTimeout(() => {
+          handleSubmitRef.current?.();
+        }, 100);
+        return;
+      }
       
-      const qIndex = activeSession.currentQuestionIndex || 0;
-      if (isStrictSectional && !canSwitchSections && isScheduledTest && test.questions[qIndex]?.section !== extractedSections[targetSecIdx]) {
-        const firstQIdx = test.questions.findIndex(q => q.section === extractedSections[targetSecIdx]);
-        const targetQ = firstQIdx !== -1 ? firstQIdx : 0;
-        setCurrentQuestionIndex(targetQ);
-        currentQuestionIndexRef.current = targetQ;
+      setTimeLeft(calculatedTimeLeft);
+      timeLeftRef.current = calculatedTimeLeft;
+
+      // Section calculations based on current timestamp
+      let calculatedSectionIndex = 0;
+      const initialSectionTimes: Record<number, number> = {};
+
+      if (isScheduledTest) {
+        extractedSections.forEach((_, idx) => {
+          initialSectionTimes[idx] = Math.max(0, Math.ceil((eTimes[idx] - now) / 1000));
+          if (now >= sTimes[idx] && now < eTimes[idx]) {
+            calculatedSectionIndex = idx;
+          }
+        });
+      } else if (activeSession?.sectionTimeLeft && Object.keys(activeSession.sectionTimeLeft).length > 0) {
+        const elapsedSinceLastUpdate = activeSession.isPaused 
+          ? 0 
+          : Math.max(0, Math.floor((now - (activeSession.lastUpdated || now)) / 1000));
+
+        extractedSections.forEach((_, idx) => {
+          const prevSecTime = activeSession.sectionTimeLeft?.[idx] ?? sectionDurations[idx] ?? 900;
+          if (idx === (activeSession.currentSectionIndex ?? 0) && !activeSession.isPaused && isStrictSectional) {
+            initialSectionTimes[idx] = Math.max(0, prevSecTime - elapsedSinceLastUpdate);
+          } else {
+            initialSectionTimes[idx] = prevSecTime;
+          }
+        });
+        calculatedSectionIndex = activeSession.currentSectionIndex || 0;
       } else {
-        setCurrentQuestionIndex(qIndex);
-        currentQuestionIndexRef.current = qIndex;
+        extractedSections.forEach((_, idx) => {
+          initialSectionTimes[idx] = sectionDurations[idx] || 900;
+        });
+      }
+      setSectionTimeLeft(initialSectionTimes);
+      sectionTimeLeftRef.current = initialSectionTimes;
+
+      lastTickTimestampRef.current = Date.now();
+
+      if (activeSession) {
+        const targetSecIdx = (isStrictSectional && !canSwitchSections && isScheduledTest) 
+          ? calculatedSectionIndex 
+          : (activeSession.currentSectionIndex ?? 0);
+        setCurrentSectionIndex(targetSecIdx);
+        currentSectionIndexRef.current = targetSecIdx;
+        
+        const qIndex = activeSession.currentQuestionIndex || 0;
+        if (isStrictSectional && !canSwitchSections && isScheduledTest && test.questions[qIndex]?.section !== extractedSections[targetSecIdx]) {
+          const firstQIdx = test.questions.findIndex(q => q.section === extractedSections[targetSecIdx]);
+          const targetQ = firstQIdx !== -1 ? firstQIdx : 0;
+          setCurrentQuestionIndex(targetQ);
+          currentQuestionIndexRef.current = targetQ;
+        } else {
+          setCurrentQuestionIndex(qIndex);
+          currentQuestionIndexRef.current = qIndex;
+        }
+
+        setAnswers(activeSession.answers || {});
+        answersRef.current = activeSession.answers || {};
+
+        setStatuses(activeSession.statuses || {});
+        statusesRef.current = activeSession.statuses || {};
+
+        setTimeSpent(activeSession.timeSpent || {});
+        timeSpentRef.current = activeSession.timeSpent || {};
+
+        setIsPaused(activeSession.isPaused || false);
+        isPausedRef.current = activeSession.isPaused || false;
+
+        setReportedQuestions(activeSession.reportedQuestions || {});
+        reportedQuestionsRef.current = activeSession.reportedQuestions || {};
+
+        if (activeSession.actionLogs) {
+          actionLogsRef.current = activeSession.actionLogs;
+        }
+        if (activeSession.questionTimestamps) {
+          questionTimestampsRef.current = activeSession.questionTimestamps;
+        }
+      } else {
+        const initialStatuses: Record<string, QuestionStatus> = {};
+        test.questions.forEach((q, idx) => {
+          initialStatuses[q.id] = idx === 0 ? 'unanswered' : 'unvisited';
+        });
+        setStatuses(initialStatuses);
+        statusesRef.current = initialStatuses;
+        setAnswers({});
+        answersRef.current = {};
+        setTimeSpent({});
+        timeSpentRef.current = {};
+        setCurrentSectionIndex(calculatedSectionIndex);
+        currentSectionIndexRef.current = calculatedSectionIndex;
+        setCurrentQuestionIndex(0);
+        currentQuestionIndexRef.current = 0;
+        setIsPaused(false);
+        isPausedRef.current = false;
+        actionLogsRef.current = [];
+        questionTimestampsRef.current = {};
+
+        // Save initial active session with timestamps
+        const initialSessionData = {
+          testId,
+          currentQuestionIndex: 0,
+          currentSectionIndex: calculatedSectionIndex,
+          sectionTimeLeft: initialSectionTimes,
+          sectionDurations,
+          sectionStartTimes: sTimes,
+          sectionEndTimes: eTimes,
+          answers: {},
+          statuses: initialStatuses,
+          timeLeft: calculatedTimeLeft,
+          timeSpent: {},
+          isPaused: false,
+          reportedQuestions: {},
+          actionLogs: [],
+          questionTimestamps: {},
+          startTime: sTime,
+          endTime: eTime,
+          scheduledStartTime: test.settings?.scheduledStartTime,
+          scheduledEndTime: test.settings?.scheduledEndTime,
+          lastUpdated: now,
+          syncTimestamp: now,
+          cloudSyncSource: (isDriveConnected ? 'google_drive' : 'local_fallback') as 'google_drive' | 'local_fallback'
+        };
+        updateActiveTestSession(testId, initialSessionData);
+        try {
+          localStorage.setItem('mockly_active_session_' + testId, JSON.stringify(initialSessionData));
+        } catch (e) {}
+
+        if (isDriveConnected) {
+          syncLiveSession(testId, test.title, initialSessionData);
+        } else if (user) {
+          saveToFirestore(user.uid, useStore.getState());
+        }
       }
 
-      setAnswers(activeSession.answers || {});
-      answersRef.current = activeSession.answers || {};
-
-      setStatuses(activeSession.statuses || {});
-      statusesRef.current = activeSession.statuses || {};
-
-      setTimeSpent(activeSession.timeSpent || {});
-      timeSpentRef.current = activeSession.timeSpent || {};
-
-      setIsPaused(activeSession.isPaused || false);
-      isPausedRef.current = activeSession.isPaused || false;
-
-      setReportedQuestions(activeSession.reportedQuestions || {});
-      reportedQuestionsRef.current = activeSession.reportedQuestions || {};
-    } else {
-      const initialStatuses: Record<string, QuestionStatus> = {};
-      test.questions.forEach((q, idx) => {
-        initialStatuses[q.id] = idx === 0 ? 'unanswered' : 'unvisited';
+      recordAction('test_start', {
+        questionIndex: activeSession?.currentQuestionIndex || 0,
+        sectionIndex: calculatedSectionIndex,
       });
-      setStatuses(initialStatuses);
-      statusesRef.current = initialStatuses;
-      setAnswers({});
-      answersRef.current = {};
-      setTimeSpent({});
-      timeSpentRef.current = {};
-      setCurrentSectionIndex(calculatedSectionIndex);
-      currentSectionIndexRef.current = calculatedSectionIndex;
-      setCurrentQuestionIndex(0);
-      currentQuestionIndexRef.current = 0;
-      setIsPaused(false);
-      isPausedRef.current = false;
 
-      // Save initial active session with timestamps
-      const initialSessionData = {
-        testId,
-        currentQuestionIndex: 0,
-        currentSectionIndex: calculatedSectionIndex,
-        sectionTimeLeft: initialSectionTimes,
-        sectionDurations,
-        sectionStartTimes: sTimes,
-        sectionEndTimes: eTimes,
-        answers: {},
-        statuses: initialStatuses,
-        timeLeft: calculatedTimeLeft,
-        timeSpent: {},
-        isPaused: false,
-        reportedQuestions: {},
-        startTime: sTime,
-        endTime: eTime,
-        scheduledStartTime: test.settings?.scheduledStartTime,
-        scheduledEndTime: test.settings?.scheduledEndTime,
-        lastUpdated: now
-      };
-      updateActiveTestSession(testId, initialSessionData);
-      try {
-        localStorage.setItem('mockly_active_session_' + testId, JSON.stringify(initialSessionData));
-      } catch (e) {}
-
-      if (user) saveToFirestore(user.uid, useStore.getState());
+      isLoadedRef.current = true;
     }
 
-    isLoadedRef.current = true;
-  }, [testId, test, isInitialized, forceFresh, isBeforeScheduledStart, isScheduledTest, scheduledStartTime, scheduledEndTime, isStrictSectional, canSwitchSections]);
+    initializeSession();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [testId, test, isInitialized, forceFresh, isBeforeScheduledStart, isScheduledTest, scheduledStartTime, scheduledEndTime, isStrictSectional, canSwitchSections, isDriveConnected, loadLiveSession, recordAction]);
 
   // Timestamp & Second-by-Second Timer Engine with Delta Precision
   const processTimerTick = useCallback(() => {
@@ -644,7 +785,11 @@ export default function MockTestInterface() {
     isPausedRef.current = false;
     setShowConfirm(null);
 
-    if (user) saveToFirestore(user.uid, useStore.getState());
+    if (isDriveConnected && testId) {
+      deleteLiveSession(testId, test.title);
+    } else if (user) {
+      saveToFirestore(user.uid, useStore.getState());
+    }
     setToastMessage("Test restarted fresh with full time.");
     setTimeout(() => setToastMessage(null), 3000);
   };
@@ -698,6 +843,7 @@ export default function MockTestInterface() {
 
   // Real-time synchronization whenever candidate selects an option
   const handleOptionSelect = (optionId: string) => {
+    const prevOptionId = answers[currentQuestion.id];
     const newAnswers = { ...answers, [currentQuestion.id]: optionId };
     const currentStatus = statuses[currentQuestion.id];
     const newStatus: QuestionStatus = (currentStatus === 'marked' || currentStatus === 'answered_marked') 
@@ -712,29 +858,16 @@ export default function MockTestInterface() {
     setAnswers(newAnswers);
     setStatuses(newStatuses);
 
-    if (testId) {
-      const sessionData = {
-        testId,
-        answers: newAnswers,
-        statuses: newStatuses,
-        currentQuestionIndex,
-        currentSectionIndex,
-        timeLeft: timeLeftRef.current,
-        sectionTimeLeft: sectionTimeLeftRef.current,
-        timeSpent: timeSpentRef.current,
-        startTime: sessionStartTimeRef.current,
-        endTime: sessionEndTimeRef.current,
-        lastUpdated: Date.now()
-      };
-      updateActiveTestSession(testId, sessionData);
-      try {
-        localStorage.setItem('mockly_active_session_' + testId, JSON.stringify(sessionData));
-      } catch (e) {}
+    recordAction('answer_select', {
+      questionId: currentQuestion.id,
+      questionIndex: currentQuestionIndex,
+      sectionIndex: currentSectionIndex,
+      optionId,
+      previousOptionId: prevOptionId,
+      status: newStatus,
+    });
 
-      if (user) {
-        saveToFirestore(user.uid, null, true);
-      }
-    }
+    syncSession();
   };
 
   const handleNext = () => {
@@ -771,26 +904,16 @@ export default function MockTestInterface() {
         setStatuses(updatedStatuses);
       }
 
-      if (testId) {
-        const sessionData = {
-          testId,
-          answers: answersRef.current,
-          statuses: statusesRef.current,
-          currentQuestionIndex: nextIdx,
-          currentSectionIndex: nextSecIdx !== -1 ? nextSecIdx : currentSectionIndex,
-          timeLeft: timeLeftRef.current,
-          sectionTimeLeft: sectionTimeLeftRef.current,
-          timeSpent: timeSpentRef.current,
-          startTime: sessionStartTimeRef.current,
-          endTime: sessionEndTimeRef.current,
-          lastUpdated: Date.now()
-        };
-        updateActiveTestSession(testId, sessionData);
-        try {
-          localStorage.setItem('mockly_active_session_' + testId, JSON.stringify(sessionData));
-        } catch (e) {}
-        if (user) saveToFirestore(user.uid);
-      }
+      recordAction('save_and_next', {
+        questionId: currentQuestion.id,
+        questionIndex: currentQuestionIndex,
+        sectionIndex: currentSectionIndex,
+      });
+
+      syncSession({
+        currentQuestionIndex: nextIdx,
+        currentSectionIndex: nextSecIdx !== -1 ? nextSecIdx : currentSectionIndex,
+      });
     }
   };
 
@@ -803,30 +926,19 @@ export default function MockTestInterface() {
     statusesRef.current = newStatuses;
     setStatuses(newStatuses);
 
-    if (testId) {
-      const sessionData = {
-        testId,
-        statuses: newStatuses,
-        answers: answersRef.current,
-        currentQuestionIndex,
-        currentSectionIndex,
-        timeLeft: timeLeftRef.current,
-        sectionTimeLeft: sectionTimeLeftRef.current,
-        timeSpent: timeSpentRef.current,
-        startTime: sessionStartTimeRef.current,
-        endTime: sessionEndTimeRef.current,
-        lastUpdated: Date.now()
-      };
-      updateActiveTestSession(testId, sessionData);
-      try {
-        localStorage.setItem('mockly_active_session_' + testId, JSON.stringify(sessionData));
-      } catch (e) {}
-      if (user) saveToFirestore(user.uid, null, true);
-    }
+    recordAction('mark_review', {
+      questionId: currentQuestion.id,
+      questionIndex: currentQuestionIndex,
+      sectionIndex: currentSectionIndex,
+      status: newStatuses[currentQuestion.id],
+    });
+
+    syncSession();
     handleNext();
   };
   
   const handleClearResponse = () => {
+    const prevOptionId = answers[currentQuestion.id];
     const newAnswers = { ...answers };
     delete newAnswers[currentQuestion.id];
     const newStatuses = {
@@ -840,26 +952,15 @@ export default function MockTestInterface() {
     setAnswers(newAnswers);
     setStatuses(newStatuses);
 
-    if (testId) {
-      const sessionData = {
-        testId,
-        answers: newAnswers,
-        statuses: newStatuses,
-        currentQuestionIndex,
-        currentSectionIndex,
-        timeLeft: timeLeftRef.current,
-        sectionTimeLeft: sectionTimeLeftRef.current,
-        timeSpent: timeSpentRef.current,
-        startTime: sessionStartTimeRef.current,
-        endTime: sessionEndTimeRef.current,
-        lastUpdated: Date.now()
-      };
-      updateActiveTestSession(testId, sessionData);
-      try {
-        localStorage.setItem('mockly_active_session_' + testId, JSON.stringify(sessionData));
-      } catch (e) {}
-      if (user) saveToFirestore(user.uid, null, true);
-    }
+    recordAction('answer_clear', {
+      questionId: currentQuestion.id,
+      questionIndex: currentQuestionIndex,
+      sectionIndex: currentSectionIndex,
+      previousOptionId: prevOptionId,
+      status: 'unanswered',
+    });
+
+    syncSession();
   };
 
   const handleJumpToQuestion = (index: number, forceSectionCheck?: string) => {
@@ -898,32 +999,27 @@ export default function MockTestInterface() {
       setStatuses(updatedStatuses);
     }
 
-    if (testId) {
-      const sessionData = {
-        testId,
-        answers: answersRef.current,
-        statuses: statusesRef.current,
-        currentQuestionIndex: index,
-        currentSectionIndex: targetSecIdx !== -1 ? targetSecIdx : currentSectionIndex,
-        timeLeft: timeLeftRef.current,
-        sectionTimeLeft: sectionTimeLeftRef.current,
-        timeSpent: timeSpentRef.current,
-        startTime: sessionStartTimeRef.current,
-        endTime: sessionEndTimeRef.current,
-        lastUpdated: Date.now()
-      };
-      updateActiveTestSession(testId, sessionData);
-      try {
-        localStorage.setItem('mockly_active_session_' + testId, JSON.stringify(sessionData));
-      } catch (e) {}
-      if (user) saveToFirestore(user.uid);
-    }
+    recordAction('jump_question', {
+      questionId: targetQ.id,
+      questionIndex: index,
+      sectionIndex: targetSecIdx !== -1 ? targetSecIdx : currentSectionIndex,
+      sectionName: targetSec,
+    });
+
+    syncSession({
+      currentQuestionIndex: index,
+      currentSectionIndex: targetSecIdx !== -1 ? targetSecIdx : currentSectionIndex,
+    });
   };
   handleJumpToQuestionRef.current = handleJumpToQuestion;
 
   const handleSectionClick = (sectionName: string) => {
     const firstQIndex = test.questions.findIndex(q => q.section === sectionName);
     if (firstQIndex !== -1) {
+      recordAction('switch_section', {
+        sectionName,
+        sectionIndex: sections.indexOf(sectionName),
+      });
       handleJumpToQuestion(firstQIndex, sectionName);
     }
   };
@@ -956,19 +1052,30 @@ export default function MockTestInterface() {
     const startTime = sessionStartTimeRef.current || (Date.now() - ((test.timeLimit - timeLeft) * 1000));
     const endTime = Math.min(Date.now(), sessionEndTimeRef.current || Date.now());
 
+    recordAction('test_submit', {
+      questionIndex: currentQuestionIndexRef.current,
+      sectionIndex: currentSectionIndexRef.current,
+    });
+
     const attempt: TestAttempt = {
       id: uuidv4(),
       testId: test.id,
       startTime,
       endTime,
+      durationMs: Math.max(0, endTime - startTime),
       answers: finalAnswers,
       statuses: finalStatuses,
       timeSpent: finalTimeSpent,
+      actionLogs: actionLogsRef.current,
+      questionTimestamps: questionTimestampsRef.current,
       completed: true,
       score: netScore, 
       totalQuestions: test.questions.length,
       correctAnswers: correct,
-      incorrectAnswers: incorrect
+      incorrectAnswers: incorrect,
+      savedToDriveAt: isDriveConnected ? Date.now() : undefined,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
     };
     
     addAttempt(attempt);
@@ -978,7 +1085,12 @@ export default function MockTestInterface() {
         localStorage.removeItem('mockly_active_session_' + testId);
       } catch (e) {}
     }
-    if (user && testId) {
+
+    // Priority 1: Save completed attempt directly to Google Drive & delete live session file
+    if (isDriveConnected) {
+      saveCompletedAttempt(attempt, test.title);
+      deleteLiveSession(testId, test.title);
+    } else if (user && testId) {
       deleteActiveSessionFromFirestore(user.uid, testId);
       saveToFirestore(user.uid, null, true);
     }
@@ -1282,7 +1394,11 @@ export default function MockTestInterface() {
              </p>
              <div className="w-full flex flex-col gap-2.5">
                <button 
-                 onClick={() => { setIsPaused(false); syncSession({ isPaused: false }); }}
+                 onClick={() => { 
+                   setIsPaused(false); 
+                   recordAction('resume');
+                   syncSession({ isPaused: false }); 
+                 }}
                  className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm transition-colors flex items-center justify-center gap-2"
                >
                  <Play className="w-4 h-4 fill-white" /> Resume Test
@@ -1475,13 +1591,40 @@ export default function MockTestInterface() {
         </div>
         
         <div className="flex items-center justify-end gap-2 sm:gap-3 w-1/3 shrink-0">
-          <div className="hidden sm:flex items-center px-1.5 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-500 whitespace-nowrap" title="Save Status">
-            {syncStatus === 'saving' && <span className="text-blue-600 flex items-center gap-1"><RefreshCw className="w-3 h-3 animate-spin"/> Saving...</span>}
-            {syncStatus === 'synced' && <span className="text-green-600 flex items-center gap-1"><Cloud className="w-3 h-3"/> ✓ Saved</span>}
-            {syncStatus === 'offline' && <span className="text-slate-600 flex items-center gap-1"><Check className="w-3 h-3"/> Saved</span>}
-            {syncStatus === 'error' && <span className="text-red-600 flex items-center gap-1"><AlertCircle className="w-3 h-3"/> Error</span>}
-            {syncStatus === 'idle' && <span className="flex items-center gap-1"><Check className="w-3 h-3"/> Saved</span>}
-          </div>
+          {/* Google Drive Live Attendance Sync Badge */}
+          {isDriveConnected ? (
+            <div 
+              className="flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-50 border border-emerald-200 text-emerald-800 whitespace-nowrap shadow-2xs"
+              title="Every choice and action is seamlessly synced to Google Drive"
+            >
+              {liveSyncStatus === 'saving' ? (
+                <>
+                  <RefreshCw className="w-3 h-3 animate-spin text-indigo-600" />
+                  <span className="text-indigo-700">Syncing to Drive...</span>
+                </>
+              ) : liveSyncStatus === 'error' ? (
+                <>
+                  <AlertCircle className="w-3 h-3 text-amber-600" />
+                  <span className="text-amber-700">Drive Saved Locally</span>
+                </>
+              ) : (
+                <>
+                  <HardDrive className="w-3 h-3 text-emerald-600" />
+                  <span className="text-emerald-700">Drive Live Sync</span>
+                </>
+              )}
+            </div>
+          ) : (
+            <button 
+              onClick={connectDrive} 
+              disabled={isDriveConnecting}
+              className="flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded transition-colors shadow-2xs" 
+              title="Connect Google Drive to auto-save every action and choice directly to your Google Drive"
+            >
+              <HardDrive className="w-3 h-3 text-indigo-600" />
+              <span className="hidden sm:inline">{isDriveConnecting ? 'Connecting...' : 'Connect Drive Sync'}</span>
+            </button>
+          )}
 
           <div className={cn("font-mono font-bold text-sm sm:text-base px-2 py-0.5 rounded whitespace-nowrap", timeLeft < 60 ? "bg-red-100 text-red-700" : timeLeft < 300 ? "bg-orange-100 text-orange-700" : "bg-slate-100 text-slate-700")}>
             {formatTime(isStrictSectional ? (sectionTimeLeft[currentSectionIndex] || 0) : timeLeft)}
@@ -1499,7 +1642,18 @@ export default function MockTestInterface() {
 
           <div className="flex items-center gap-1 border-l border-slate-200 pl-2">
             <button title="Full Screen" onClick={handleToggleFullscreen} className="p-1.5 hover:bg-slate-100 rounded text-slate-600 hidden sm:block"><Maximize size={16}/></button>
-            <button title={isPaused ? "Resume" : "Pause"} onClick={() => { const n = !isPaused; setIsPaused(n); syncSession({ isPaused: n }); }} className="p-1.5 hover:bg-slate-100 rounded text-slate-600 hidden sm:block">{isPaused ? <Play size={16}/> : <Pause size={16}/>}</button>
+            <button 
+              title={isPaused ? "Resume" : "Pause"} 
+              onClick={() => { 
+                const n = !isPaused; 
+                setIsPaused(n); 
+                recordAction(n ? 'pause' : 'resume');
+                syncSession({ isPaused: n }); 
+              }} 
+              className="p-1.5 hover:bg-slate-100 rounded text-slate-600 hidden sm:block"
+            >
+              {isPaused ? <Play size={16}/> : <Pause size={16}/>}
+            </button>
             <button title="Exit or End Test" onClick={() => setShowConfirm('exit')} className="p-1.5 hover:bg-red-50 text-red-600 rounded hidden sm:block"><LogOut size={16}/></button>
             <button onClick={() => setShowPalette(!showPalette)} className="lg:hidden p-1.5 hover:bg-slate-100 text-slate-600 rounded"><Menu size={18}/></button>
           </div>

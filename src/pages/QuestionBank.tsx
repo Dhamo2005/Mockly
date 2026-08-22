@@ -3,19 +3,29 @@ import { useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { useStore } from '../store/useStore';
 import { useAuth } from '../contexts/AuthContext';
+import { useGoogleDrive } from '../contexts/GoogleDriveContext';
 import { saveTestToFirestore, saveToFirestore, deleteTestFromFirestore, sanitizeTestId } from '../lib/firebaseSync';
-import { Upload, FileJson, Download, CheckCircle2, AlertCircle, Trash2, Database, ShieldCheck, Sliders, Sparkles, AlarmClock, ArrowLeftRight, Share2, Globe, Lock, Calendar } from 'lucide-react';
+import { Upload, FileJson, Download, CheckCircle2, AlertCircle, Trash2, Database, ShieldCheck, Sliders, Sparkles, AlarmClock, ArrowLeftRight, Share2, Globe, Lock, Calendar, HardDrive, Folder } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { Test, Question } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { ExamPersonalityModal } from '../components/ExamPersonalityModal';
 import { ShareTestModal } from '../components/ShareTestModal';
+import { GoogleDrivePickerModal } from '../components/GoogleDrivePickerModal';
 import { getTestDisplayDate } from '../lib/dateUtils';
 
 export default function QuestionBank() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { tests, importTests, deleteTest, clearTests, updateTest } = useStore();
+  const {
+    isConnected: isDriveConnected,
+    isSyncing: isDriveSyncing,
+    files: driveFiles,
+    connect: connectDrive,
+    exportTest: exportTestToDrive,
+  } = useGoogleDrive();
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState<{ type: 'success' | 'error' | null, message: string }>({ type: null, message: '' });
   const [isDragging, setIsDragging] = useState(false);
@@ -24,6 +34,14 @@ export default function QuestionBank() {
   const [testToEditPersonality, setTestToEditPersonality] = useState<Test | null>(null);
   const [testToShare, setTestToShare] = useState<Test | null>(null);
   const [pendingImportTests, setPendingImportTests] = useState<any[] | null>(null);
+  const [showDrivePicker, setShowDrivePicker] = useState(false);
+  const [exportingTestId, setExportingTestId] = useState<string | null>(null);
+
+  const handleDriveExport = async (test: Test) => {
+    setExportingTestId(test.id);
+    await exportTestToDrive(test);
+    setExportingTestId(null);
+  };
 
   
     const handleExportTest = (test: Test) => {
@@ -317,7 +335,8 @@ export default function QuestionBank() {
         )}
       </AnimatePresence>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Upload Card */}
         <motion.div 
           whileHover={{ y: -2 }}
           className="bg-white p-6 rounded-2xl border border-slate-100 shadow-[0_4px_20px_rgba(0,0,0,0.02)] flex flex-col"
@@ -326,11 +345,11 @@ export default function QuestionBank() {
             <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
               <Upload className="h-5 w-5" />
             </div>
-            <h3 className="text-lg font-bold text-slate-800">Import Data</h3>
+            <h3 className="text-lg font-bold text-slate-800">Upload File</h3>
           </div>
           
           <p className="text-slate-500 text-sm mb-4 leading-relaxed">
-            Upload custom question banks in JSON format. Multi-language (English/Hindi) is supported out of the box.
+            Upload custom question banks in JSON format from your device.
           </p>
           
           <input 
@@ -346,18 +365,78 @@ export default function QuestionBank() {
             onDragLeave={() => setIsDragging(false)}
             onDrop={handleDrop}
             onClick={() => fileInputRef.current?.click()}
-            className={`mt-auto border-2 border-dashed rounded-2xl p-8 flex flex-col items-center justify-center cursor-pointer transition-all ${
+            className={`mt-auto border-2 border-dashed rounded-2xl p-6 flex flex-col items-center justify-center cursor-pointer transition-all ${
               isDragging 
                 ? 'border-blue-400 bg-blue-50/50 scale-[1.02]' 
                 : 'border-slate-200 hover:border-blue-300 hover:bg-slate-50'
             }`}
           >
-            <Database className={`w-8 h-8 mb-3 transition-colors ${isDragging ? 'text-blue-500' : 'text-slate-300'}`} />
-            <p className="text-sm font-semibold text-slate-700">Click to upload or drag and drop</p>
-            <p className="text-xs text-slate-400 mt-1">JSON files only</p>
+            <Database className={`w-7 h-7 mb-2 transition-colors ${isDragging ? 'text-blue-500' : 'text-slate-300'}`} />
+            <p className="text-xs font-bold text-slate-700">Click to upload or drag &amp; drop</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">JSON files supported</p>
           </div>
         </motion.div>
 
+        {/* Google Drive Card */}
+        <motion.div 
+          whileHover={{ y: -2 }}
+          className="bg-white p-6 rounded-2xl border border-slate-100 shadow-[0_4px_20px_rgba(0,0,0,0.02)] flex flex-col justify-between"
+        >
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center">
+                  <HardDrive className="h-5 w-5" />
+                </div>
+                <h3 className="text-lg font-bold text-slate-800">Google Drive</h3>
+              </div>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                isDriveConnected 
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                  : 'bg-slate-100 text-slate-600 border-slate-200'
+              }`}>
+                {isDriveConnected ? 'Connected' : 'Not Connected'}
+              </span>
+            </div>
+            
+            <p className="text-slate-500 text-sm mb-4 leading-relaxed">
+              Store and import test files directly from your private <strong>Mockly App Data</strong> folder in Google Drive.
+            </p>
+          </div>
+
+          <div className="space-y-2 mt-auto">
+            {isDriveConnected ? (
+              <>
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between text-xs">
+                  <span className="text-slate-600 font-medium flex items-center gap-1.5">
+                    <Folder className="w-3.5 h-3.5 text-amber-500" />
+                    Drive Files
+                  </span>
+                  <span className="font-bold text-slate-800">{driveFiles.length} files available</span>
+                </div>
+                <motion.button 
+                  whileHover={{ scale: 1.01 }}
+                  whileTap={{ scale: 0.99 }}
+                  onClick={() => setShowDrivePicker(true)}
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-4 rounded-xl transition-colors flex items-center justify-center gap-2 text-xs shadow-sm"
+                >
+                  <Folder className="h-3.5 w-3.5" /> Browse &amp; Import from Drive
+                </motion.button>
+              </>
+            ) : (
+              <motion.button 
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.99 }}
+                onClick={() => connectDrive()}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl transition-colors flex items-center justify-center gap-2 text-xs shadow-sm"
+              >
+                <HardDrive className="h-4 w-4" /> Connect Google Drive
+              </motion.button>
+            )}
+          </div>
+        </motion.div>
+
+        {/* Format Guide */}
         <motion.div 
           whileHover={{ y: -2 }}
           className="bg-white p-6 rounded-2xl border border-slate-100 shadow-[0_4px_20px_rgba(0,0,0,0.02)] flex flex-col"
@@ -366,35 +445,27 @@ export default function QuestionBank() {
             <div className="w-10 h-10 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center">
               <FileJson className="h-5 w-5" />
             </div>
-            <h3 className="text-lg font-bold text-slate-800">Format Guide</h3>
+            <h3 className="text-lg font-bold text-slate-800">Format &amp; Sample</h3>
           </div>
           
-          <p className="text-slate-500 text-sm mb-4 leading-relaxed">
-            Our JSON format supports rich mathematical expressions (LaTeX) and multiple languages natively.
-          </p>
-          
-          <div className="bg-slate-50 rounded-2xl p-4 text-sm text-slate-600 space-y-3 mb-6 mt-auto">
+          <div className="bg-slate-50 rounded-xl p-3 text-xs text-slate-600 space-y-2 mb-4">
             <div className="flex gap-2">
-              <ShieldCheck className="w-4 h-4 text-green-500 shrink-0 mt-0.5" />
-              <p><strong className="text-slate-800">Math/LaTeX:</strong> Wrap formulas with <code>$</code> for inline equations or <code>$$</code> for block equations.</p>
+              <ShieldCheck className="w-3.5 h-3.5 text-green-500 shrink-0 mt-0.5" />
+              <p><strong className="text-slate-800">Math/LaTeX:</strong> Wrap formulas with <code>$</code> for inline or <code>$$</code> for block equations.</p>
             </div>
             <div className="flex gap-2">
-              <ShieldCheck className="w-4 h-4 text-green-500 shrink-0 mt-0.5" />
-              <p><strong className="text-slate-800">Languages:</strong> Map codes to strings: <code>{"{\"en\": \"...\", \"hi\": \"...\"}"}</code></p>
-            </div>
-            <div className="flex gap-2">
-              <ShieldCheck className="w-4 h-4 text-green-500 shrink-0 mt-0.5" />
-              <p><strong className="text-slate-800">Markdown:</strong> Basic styling (bold, italics) is supported.</p>
+              <ShieldCheck className="w-3.5 h-3.5 text-green-500 shrink-0 mt-0.5" />
+              <p><strong className="text-slate-800">Languages:</strong> <code>{"{\"en\": \"...\", \"hi\": \"...\"}"}</code></p>
             </div>
           </div>
           
           <motion.button 
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
+            whileHover={{ scale: 1.01 }}
+            whileTap={{ scale: 0.99 }}
             onClick={exportTemplateJSON}
-            className="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-3 px-4 rounded-2xl transition-colors flex items-center justify-center gap-2 shadow-sm"
+            className="w-full mt-auto bg-slate-800 hover:bg-slate-900 text-white font-bold py-2.5 px-4 rounded-xl transition-colors flex items-center justify-center gap-2 text-xs shadow-sm"
           >
-            <Download className="h-4 w-4" /> Download Example Template
+            <Download className="h-3.5 w-3.5" /> Download Example Template
           </motion.button>
         </motion.div>
       </div>
@@ -504,6 +575,19 @@ export default function QuestionBank() {
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
+                    {/* Save to Drive */}
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDriveExport(test);
+                      }}
+                      disabled={exportingTestId === test.id}
+                      className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors disabled:opacity-50"
+                      title={isDriveConnected ? "Save to Google Drive" : "Connect & Save to Google Drive"}
+                    >
+                      <HardDrive className={`w-4 h-4 ${exportingTestId === test.id ? 'animate-pulse text-indigo-600' : ''}`} />
+                    </button>
+
                     <button 
                       onClick={(e) => {
                         e.stopPropagation();
@@ -693,6 +777,12 @@ export default function QuestionBank() {
           onClose={() => setTestToShare(null)}
         />
       )}
+
+      {/* Google Drive File Picker & Importer Modal */}
+      <GoogleDrivePickerModal
+        isOpen={showDrivePicker}
+        onClose={() => setShowDrivePicker(false)}
+      />
     </motion.div>
   );
 }
