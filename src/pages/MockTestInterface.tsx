@@ -17,7 +17,6 @@ import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import { useAuth } from '../contexts/AuthContext';
 import { useGoogleDrive } from '../contexts/GoogleDriveContext';
-import { saveToFirestore, deleteActiveSessionFromFirestore, fetchTestByIdFromFirestore } from '../lib/firebaseSync';
 
 export default function MockTestInterface() {
   const { user } = useAuth();
@@ -51,23 +50,7 @@ export default function MockTestInterface() {
     syncStatus 
   } = useStore();
   
-  const [isFetchingRemote, setIsFetchingRemote] = useState(false);
   const test = tests.find(t => t.id === testId);
-
-  // If opening directly via share link and test is not in store, fetch from Firestore
-  useEffect(() => {
-    if (!test && testId && !isFetchingRemote) {
-      setIsFetchingRemote(true);
-      fetchTestByIdFromFirestore(testId).then((fetchedTest) => {
-        if (fetchedTest) {
-          importTests([fetchedTest]);
-        }
-        setIsFetchingRemote(false);
-      }).catch(() => {
-        setIsFetchingRemote(false);
-      });
-    }
-  }, [test, testId, isFetchingRemote, importTests]);
   const allowSectionSwitching = test?.settings?.allowSectionSwitching === true || test?.settings?.allowForceSkipSection === true;
   const isStrictSectional = test?.settings?.strictSectionalTiming === true && !allowSectionSwitching;
   const canSwitchSections = !isStrictSectional || allowSectionSwitching;
@@ -263,11 +246,9 @@ export default function MockTestInterface() {
       localStorage.setItem('mockly_active_session_' + testId, JSON.stringify(sessionData));
     } catch (e) {}
 
-    // Priority 1: Google Drive Sync - auto-save every action in real time
+    // Google Drive Sync - auto-save every action in real time
     if (isDriveConnected) {
       syncLiveSession(testId, test.title, sessionData);
-    } else if (user) {
-      saveToFirestore(user.uid, useStore.getState());
     }
   };
 
@@ -521,8 +502,6 @@ export default function MockTestInterface() {
 
         if (isDriveConnected) {
           syncLiveSession(testId, test.title, initialSessionData);
-        } else if (user) {
-          saveToFirestore(user.uid, useStore.getState());
         }
       }
 
@@ -787,8 +766,6 @@ export default function MockTestInterface() {
 
     if (isDriveConnected && testId) {
       deleteLiveSession(testId, test.title);
-    } else if (user) {
-      saveToFirestore(user.uid, useStore.getState());
     }
     setToastMessage("Test restarted fresh with full time.");
     setTimeout(() => setToastMessage(null), 3000);
@@ -1086,13 +1063,10 @@ export default function MockTestInterface() {
       } catch (e) {}
     }
 
-    // Priority 1: Save completed attempt directly to Google Drive & delete live session file
+    // Save completed attempt directly to Google Drive & delete live session file
     if (isDriveConnected) {
       saveCompletedAttempt(attempt, test.title);
       deleteLiveSession(testId, test.title);
-    } else if (user && testId) {
-      deleteActiveSessionFromFirestore(user.uid, testId);
-      saveToFirestore(user.uid, null, true);
     }
     navigate(`/review/${attempt.id}`);
   };
@@ -1178,12 +1152,12 @@ export default function MockTestInterface() {
 
 
   if (!test) {
-    if (!isInitialized || isFetchingRemote) {
+    if (!isInitialized) {
       return (
         <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950 p-6">
           <div className="flex flex-col items-center gap-3">
             <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-            <p className="text-sm font-medium text-slate-600 dark:text-slate-400">Loading test session from Firebase...</p>
+            <p className="text-sm font-medium text-slate-600 dark:text-slate-400">Loading test session...</p>
           </div>
         </div>
       );

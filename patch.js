@@ -1,77 +1,25 @@
-const fs = require('fs');
-let code = fs.readFileSync('src/lib/sqliteDriveSync.ts', 'utf8');
+import fs from 'fs';
 
-code = code.replace(
-`let syncTimeout: any;
-let isSyncing = false;
-let needsSync = false;`,
-`let localSaveTimeout: any;
-let syncTimeout: any;
-let isSyncing = false;
-let needsSync = false;`
-);
+let content = fs.readFileSync('src/lib/googleDriveSync.ts', 'utf-8');
 
-code = code.replace(
-`    // 1. Always update SQLite DB in memory and persist binary to IndexedDB locally
-    saveStateToDB(state);
-    const binaryData = db.export();
-    await saveSQLiteToIDB(binaryData);
+const helper = `
+async function getTestFolderId(token: string, rootFolderId: string, testId: string, testTitle?: string, subfolder?: string): Promise<string> {
+  const state = useStore.getState();
+  const test = state.tests.find((t: any) => t.id === testId);
+  
+  const cleanTitle = (testTitle || test?.title || 'Untitled_Test').replace(/[/\\\\?%*:|"<>]/g, '_');
+  const testFolderName = \`[Test] \${cleanTitle}_\${testId}\`;
 
-    // 2. If Google token is provided, sync SQLite file to Google Drive
-    if (!token) return;
-    
-    if (isSyncing) {
-      needsSync = true;
-      return;
-    }
+  const path: string[] = [];
+  if (test?.examCategory) path.push(test.examCategory);
+  if (test?.exam?.tier) path.push(test.exam.tier);
+  path.push(testFolderName);
+  if (subfolder) path.push(subfolder);
 
-    if (syncTimeout) clearTimeout(syncTimeout);`,
-`    // 1. Always update SQLite DB in memory (fast)
-    saveStateToDB(state);
-    
-    const performLocalExport = async () => {
-      const binaryData = db!.export();
-      await saveSQLiteToIDB(binaryData);
-    };
+  return getOrCreatePath(token, rootFolderId, path);
+}
+`;
 
-    // Throttle local IndexedDB writes to 3 seconds to avoid UI stutter
-    if (immediate) {
-      if (localSaveTimeout) clearTimeout(localSaveTimeout);
-      await performLocalExport();
-    } else {
-      if (!localSaveTimeout) {
-        localSaveTimeout = setTimeout(async () => {
-          localSaveTimeout = null;
-          await performLocalExport();
-        }, 3000);
-      }
-    }
+content = content.replace('export async function exportTestToGoogleDrive', helper + '\nexport async function exportTestToGoogleDrive');
 
-    // 2. If Google token is provided, sync SQLite file to Google Drive
-    if (!token) return;
-    
-    if (isSyncing) {
-      needsSync = true;
-      return;
-    }`);
-
-code = code.replace(
-`    if (immediate) {
-      performSync();
-    } else {
-      syncTimeout = setTimeout(performSync, 1500);
-    }`,
-`    // Throttle Google Drive uploads to 15 seconds to avoid rate limits
-    if (immediate) {
-      if (syncTimeout) clearTimeout(syncTimeout);
-      performSync();
-    } else {
-      if (!syncTimeout) {
-        syncTimeout = setTimeout(() => {
-          syncTimeout = null;
-          performSync();
-        }, 15000);
-      }
-    }`);
-
-fs.writeFileSync('src/lib/sqliteDriveSync.ts', code);
+fs.writeFileSync('src/lib/googleDriveSync.ts', content);

@@ -2,9 +2,9 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '../store/useStore';
 import { useAuth } from '../contexts/AuthContext';
-import { deleteTestFromFirestore, saveToFirestore } from '../lib/firebaseSync';
+import { useGoogleDrive } from '../contexts/GoogleDriveContext';
 import { useNavigate } from 'react-router-dom';
-import { PlayCircle, Globe, DownloadCloud, Trash2, BookOpen, Clock, AlignLeft, AlarmClock, Database, ArrowLeftRight, Share2, Lock, Calendar } from 'lucide-react';
+import { PlayCircle, Globe, DownloadCloud, Trash2, BookOpen, Clock, AlignLeft, AlarmClock, Database, ArrowLeftRight, Share2, Lock, Calendar, HardDrive, RefreshCw } from 'lucide-react';
 import { Ripple } from '../components/Ripple';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -15,7 +15,8 @@ import QuestionBank from './QuestionBank';
 
 export default function Tests() {
   const { user } = useAuth();
-  const { tests, deleteTest, activeTestSessions } = useStore();
+  const { tests, activeTestSessions } = useStore();
+  const { isConnected: isDriveConnected, isSyncing: isDriveSyncing, deleteTest: deleteDriveTest, refreshFromDrive } = useGoogleDrive();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'imported' | 'online'>('imported');
   const [testToDelete, setTestToDelete] = useState<{ id: string; title: string } | null>(null);
@@ -24,12 +25,8 @@ export default function Tests() {
   const handleDeleteConfirm = async () => {
     if (testToDelete) {
       const idToDelete = testToDelete.id;
-      deleteTest(idToDelete);
+      await deleteDriveTest(idToDelete);
       setTestToDelete(null);
-      if (user?.uid) {
-        await deleteTestFromFirestore(idToDelete);
-        saveToFirestore(user.uid, null, true);
-      }
     }
   };
 
@@ -54,6 +51,17 @@ export default function Tests() {
           <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Mock Tests</h2>
           <p className="text-slate-500 text-sm mt-1">Select a test to challenge yourself.</p>
         </div>
+        {isDriveConnected && (
+          <button
+            onClick={() => refreshFromDrive()}
+            disabled={isDriveSyncing}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl text-xs font-semibold shadow-xs transition-colors disabled:opacity-50"
+            title="Refresh latest tests from Google Drive"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isDriveSyncing ? 'animate-spin text-blue-600' : 'text-slate-500'}`} />
+            <span>{isDriveSyncing ? 'Refreshing...' : 'Refresh Drive'}</span>
+          </button>
+        )}
       </div>
 
       <div className="flex p-1 bg-slate-100/80 backdrop-blur-sm rounded-2xl w-fit">
@@ -106,93 +114,109 @@ export default function Tests() {
                     layout
                     key={test.id} 
                     onClick={() => navigate(`/test-details/${test.id}`)}
-                    className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm hover:border-blue-300 hover:shadow-md transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 group"
+                    className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:border-slate-300 transition-all cursor-pointer flex gap-4 group"
                   >
-                    <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1">
-                      <div className="p-2 bg-slate-50 text-slate-400 rounded-lg group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors shrink-0 border border-slate-200 group-hover:border-blue-200">
-                        <BookOpen className="w-4 h-4" />
-                      </div>
-                      
-                      <div className="min-w-0 flex-1">
-                        <h4 className="font-bold text-sm text-slate-800 line-clamp-1 group-hover:text-blue-700 transition-colors">
-                          {test.title}
-                        </h4>
-                        <div className="flex items-center gap-2 mt-1 flex-wrap text-[11px]">
-                          <span className="flex items-center gap-1 text-slate-600 bg-slate-100/90 px-1.5 py-0.5 rounded border border-slate-200 font-medium">
-                            <Calendar className="w-3 h-3 text-slate-500" />
-                            {getTestDisplayDate(test)}
-                          </span>
-                          <span className="flex items-center gap-1 text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 font-medium">
-                            <AlignLeft className="w-3 h-3 text-slate-400" />
-                            {test.questions.length} Qs
-                          </span>
-                          <span className="flex items-center gap-1 text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 font-medium">
-                            <Clock className="w-3 h-3 text-slate-400" />
-                            {Math.floor(test.timeLimit / 60)}m
-                          </span>
-                          <span className={`px-1.5 py-0.5 rounded border font-semibold ${
-                            isNoNeg ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-indigo-50 text-indigo-700 border-indigo-200'
-                          }`}>
-                            {isNoNeg ? 'No Neg' : `+${pos.toFixed(1)} / -${neg.toFixed(2)}`}
-                          </span>
-                          {test.settings?.strictSectionalTiming && !test.settings?.allowSectionSwitching && (
-                            <span className="flex items-center gap-1 text-orange-700 bg-orange-50 px-1.5 py-0.5 rounded border border-orange-200 font-semibold">
-                              <AlarmClock className="w-3 h-3 text-orange-500" />
-                              Strict Timing
-                            </span>
-                          )}
-                          {test.settings?.allowSectionSwitching && (
-                            <span className="flex items-center gap-1 text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200 font-semibold">
-                              <ArrowLeftRight className="w-3 h-3 text-indigo-500" />
-                              Switch Sections
-                            </span>
-                          )}
-                          {activeTestSessions && activeTestSessions[test.id] && (
-                            <span className="flex items-center gap-1 text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 font-semibold">
-                              <Clock className="w-3 h-3 text-amber-500" />
-                              In Progress
-                            </span>
-                          )}
-                        </div>
+                    {/* Left Icon */}
+                    <div className="shrink-0 mt-0.5">
+                      <div className="w-12 h-12 bg-slate-50 text-slate-600 rounded-xl flex items-center justify-center border border-slate-200">
+                        <BookOpen className="w-5 h-5" />
                       </div>
                     </div>
                     
-                    <div className="flex items-center gap-1.5 sm:ml-0 ml-10 shrink-0">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setTestToShare(test);
-                        }}
-                        className="p-1.5 text-slate-400 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition-colors border border-transparent hover:border-blue-200"
-                        title="Share Mock Test"
-                      >
-                        <Share2 className="w-4 h-4" />
-                      </button>
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigate(`/test-details/${test.id}`);
-                        }}
-                        className={cn(
-                          "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-colors shadow-xs",
-                          activeTestSessions && activeTestSessions[test.id]
-                            ? "bg-amber-100 text-amber-800 hover:bg-amber-200"
-                            : "bg-blue-50 text-blue-700 hover:bg-blue-100"
+                    {/* Right Content */}
+                    <div className="flex-1 min-w-0 flex flex-col">
+                      {/* Title */}
+                      <h4 className="font-bold text-base text-slate-800 line-clamp-1 group-hover:text-blue-700 transition-colors mb-2">
+                        {test.title}
+                      </h4>
+                      
+                      {/* Info Pills Row 1 */}
+                      <div className="flex items-center gap-2 flex-wrap text-xs mb-2">
+                        <span className="flex items-center gap-1.5 text-slate-600 bg-white px-2 py-1 rounded border border-slate-200 font-medium">
+                          <Calendar className="w-3.5 h-3.5 text-slate-500" />
+                          {getTestDisplayDate(test)}
+                        </span>
+                        <span className="flex items-center gap-1.5 text-slate-600 bg-white px-2 py-1 rounded border border-slate-200 font-medium">
+                          <AlignLeft className="w-3.5 h-3.5 text-slate-500" />
+                          {test.questions.length} Qs
+                        </span>
+                        <span className="flex items-center gap-1.5 text-slate-600 bg-white px-2 py-1 rounded border border-slate-200 font-medium">
+                          <Clock className="w-3.5 h-3.5 text-slate-500" />
+                          {Math.floor(test.timeLimit / 60)}m
+                        </span>
+                      </div>
+                      
+                      {/* Info Pills Row 2 */}
+                      <div className="flex items-center gap-2 flex-wrap text-xs mb-3">
+                        <span className={`px-2 py-1 rounded border font-medium ${
+                          isNoNeg ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-blue-50 text-blue-700 border-blue-100'
+                        }`}>
+                          {isNoNeg ? 'No Neg' : `+${pos.toFixed(1)} / -${neg.toFixed(2)}`}
+                        </span>
+                        {test.settings?.strictSectionalTiming && !test.settings?.allowSectionSwitching && (
+                          <span className="flex items-center gap-1.5 text-orange-700 bg-orange-50 px-2 py-1 rounded border border-orange-100 font-medium">
+                            <AlarmClock className="w-3.5 h-3.5 text-orange-600" />
+                            Strict Timing
+                          </span>
                         )}
-                      >
-                        <PlayCircle className="w-3.5 h-3.5" /> 
-                        {activeTestSessions && activeTestSessions[test.id] ? "Resume" : "Start"}
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setTestToDelete({ id: test.id, title: test.title });
-                        }}
-                        className="p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors border border-transparent hover:border-red-200"
-                        title="Delete Test"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                        {test.settings?.allowSectionSwitching && (
+                          <span className="flex items-center gap-1.5 text-indigo-700 bg-indigo-50 px-2 py-1 rounded border border-indigo-100 font-medium">
+                            <ArrowLeftRight className="w-3.5 h-3.5 text-indigo-600" />
+                            Switch Sections
+                          </span>
+                        )}
+                        {activeTestSessions && activeTestSessions[test.id] && (
+                          <span className="flex items-center gap-1.5 text-amber-700 bg-amber-50 px-2 py-1 rounded border border-amber-100 font-medium">
+                            <Clock className="w-3.5 h-3.5 text-amber-600" />
+                            In Progress
+                          </span>
+                        )}
+                      </div>
+                      
+                      {/* Divider */}
+                      <div className="h-px border-b border-dashed border-slate-200 mb-3 w-full" />
+                      
+                      {/* Bottom Actions Row */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1 -ml-1">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setTestToShare(test);
+                            }}
+                            className="p-1.5 text-slate-600 hover:bg-blue-50 hover:text-blue-600 rounded-md transition-colors"
+                            title="Share Mock Test"
+                          >
+                            <Share2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setTestToDelete({ id: test.id, title: test.title });
+                            }}
+                            className="p-1.5 text-slate-600 hover:bg-red-50 hover:text-red-600 rounded-md transition-colors"
+                            title="Delete Test"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                        
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/test-details/${test.id}`);
+                          }}
+                          className={cn(
+                            "flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-bold transition-all shadow-sm",
+                            activeTestSessions && activeTestSessions[test.id]
+                              ? "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
+                              : "bg-blue-600 border border-transparent text-white hover:bg-blue-700"
+                          )}
+                        >
+                          {activeTestSessions && activeTestSessions[test.id] ? null : <PlayCircle className="w-4 h-4" />}
+                          {activeTestSessions && activeTestSessions[test.id] ? "Resume" : "Start"}
+                        </button>
+                      </div>
                     </div>
                   </motion.div>
                 );

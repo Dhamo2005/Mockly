@@ -4,7 +4,6 @@ import { createPortal } from 'react-dom';
 import { useStore } from '../store/useStore';
 import { useAuth } from '../contexts/AuthContext';
 import { useGoogleDrive } from '../contexts/GoogleDriveContext';
-import { saveTestToFirestore, saveToFirestore, deleteTestFromFirestore, sanitizeTestId } from '../lib/firebaseSync';
 import { Upload, FileJson, Download, CheckCircle2, AlertCircle, Trash2, Database, ShieldCheck, Sliders, Sparkles, AlarmClock, ArrowLeftRight, Share2, Globe, Lock, Calendar, HardDrive, Folder } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { Test, Question } from '../types';
@@ -14,16 +13,21 @@ import { ShareTestModal } from '../components/ShareTestModal';
 import { GoogleDrivePickerModal } from '../components/GoogleDrivePickerModal';
 import { getTestDisplayDate } from '../lib/dateUtils';
 
+const sanitizeTestId = (id: string) => id.replace(/[/.#$[\]]/g, '_');
+
 export default function QuestionBank() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { tests, importTests, deleteTest, clearTests, updateTest } = useStore();
+  const { tests, importTests, clearTests, updateTest } = useStore();
   const {
     isConnected: isDriveConnected,
     isSyncing: isDriveSyncing,
     files: driveFiles,
     connect: connectDrive,
     exportTest: exportTestToDrive,
+    saveTest: saveDriveTest,
+    deleteTest: deleteDriveTest,
+    refreshFromDrive,
   } = useGoogleDrive();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -313,9 +317,22 @@ export default function QuestionBank() {
       animate={{ opacity: 1, y: 0 }}
       className="w-full max-w-7xl mx-auto space-y-4 md:space-y-6"
     >
-      <div className="pt-0 md:pt-2">
-        <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Question Bank</h2>
-        <p className="text-slate-500 text-sm mt-1">Manage your local test repository.</p>
+      <div className="pt-0 md:pt-2 flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Question Bank</h2>
+          <p className="text-slate-500 text-sm mt-1">Manage your local &amp; Google Drive test repository.</p>
+        </div>
+        {isDriveConnected && (
+          <button
+            onClick={() => refreshFromDrive()}
+            disabled={isDriveSyncing}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl text-xs font-semibold shadow-xs transition-colors disabled:opacity-50"
+            title="Refresh latest tests from Google Drive"
+          >
+            <HardDrive className={`w-3.5 h-3.5 ${isDriveSyncing ? 'animate-spin text-blue-600' : 'text-slate-500'}`} />
+            <span>{isDriveSyncing ? 'Refreshing...' : 'Refresh Drive'}</span>
+          </button>
+        )}
       </div>
 
       <AnimatePresence>
@@ -642,12 +659,8 @@ export default function QuestionBank() {
                   <button
                     onClick={async () => {
                       const idToDelete = testToDelete.id;
-                      deleteTest(idToDelete);
+                      await deleteDriveTest(idToDelete);
                       setTestToDelete(null);
-                      if (user?.uid) {
-                        await deleteTestFromFirestore(idToDelete);
-                        saveToFirestore(user.uid, null, true);
-                      }
                     }}
                     className="flex-1 py-3 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold transition-colors shadow-sm text-sm"
                   >
@@ -677,7 +690,7 @@ export default function QuestionBank() {
                 </div>
                 <h3 className="text-xl font-bold text-slate-800">Clear Entire Question Bank?</h3>
                 <p className="text-sm text-slate-500 mt-2 leading-relaxed">
-                  This will delete all <strong className="text-slate-700">{tests.length} tests</strong> and all associated attempt history from your account.
+                  This will delete all <strong className="text-slate-700">{tests.length} tests</strong> and all associated attempt history from your account and Google Drive.
                 </p>
                 <div className="flex gap-3 mt-6">
                   <button
@@ -691,11 +704,8 @@ export default function QuestionBank() {
                       const testsToDelete = [...tests];
                       clearTests();
                       setShowClearAllModal(false);
-                      if (user?.uid) {
-                        for (const t of testsToDelete) {
-                          await deleteTestFromFirestore(t.id);
-                        }
-                        saveToFirestore(user.uid, null, true);
+                      for (const t of testsToDelete) {
+                        await deleteDriveTest(t.id);
                       }
                     }}
                     className="flex-1 py-3 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold transition-colors shadow-sm text-sm"
@@ -737,15 +747,8 @@ export default function QuestionBank() {
               });
 
               importTests(finalizedTests);
-              
-              if (user?.uid) {
-                for (const t of finalizedTests) {
-                  await saveTestToFirestore(user.uid, t);
-                }
-                saveToFirestore(user.uid, null, true);
-              }
 
-              setStatus({ type: 'success', message: `Successfully imported ${finalizedTests.length} test paper(s) & synced across all devices.` });
+              setStatus({ type: 'success', message: `Successfully imported ${finalizedTests.length} test paper(s) & synced with Google Drive.` });
               setTimeout(() => setStatus({ type: null, message: '' }), 4000);
               setPendingImportTests(null);
             } else {
@@ -759,10 +762,6 @@ export default function QuestionBank() {
                 settings: { ...testToEditPersonality.settings, ...(updatedFields.settings || {}) }
               };
               updateTest(updatedTest);
-              if (user?.uid) {
-                await saveTestToFirestore(user.uid, updatedTest);
-                saveToFirestore(user.uid, null, true);
-              }
             }
             setTestToEditPersonality(null);
           }}

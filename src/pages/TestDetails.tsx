@@ -2,29 +2,29 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useStore } from '../store/useStore';
+import { useGoogleDrive } from '../contexts/GoogleDriveContext';
 import { 
   PlayCircle, ArrowLeft, Clock, FileText, BarChart, ChevronRight, 
   Trash2, Sliders, ShieldCheck, Sparkles, Download, AlarmClock, 
-  RotateCcw, Calendar, AlertCircle, ArrowLeftRight, Share2, Globe, Lock, ShieldAlert, User
+  RotateCcw, Calendar, AlertCircle, ArrowLeftRight, Share2, Globe, Lock, ShieldAlert, User, HardDrive
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Ripple } from '../components/Ripple';
 import { ExamPersonalityModal } from '../components/ExamPersonalityModal';
 import { ShareTestModal } from '../components/ShareTestModal';
 import { useAuth } from '../contexts/AuthContext';
-import { saveToFirestore, deleteTestFromFirestore, fetchTestByIdFromFirestore } from '../lib/firebaseSync';
 import { getTestDisplayDate, getAttemptDate } from '../lib/dateUtils';
 
 export default function TestDetails() {
   const { user } = useAuth();
   const { testId } = useParams();
   const navigate = useNavigate();
-  const { tests, attempts, deleteTest, deleteAttempt, updateTest, activeTestSessions, clearActiveTestSession, importTests } = useStore();
+  const { tests, attempts, updateTest, activeTestSessions, clearActiveTestSession, importTests } = useStore();
+  const { deleteTest: deleteDriveTest, deleteAttempt: deleteDriveAttempt, saveTest: saveDriveTest } = useGoogleDrive();
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [attemptToDelete, setAttemptToDelete] = useState<string | null>(null);
   const [showPersonalityModal, setShowPersonalityModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
-  const [isFetchingRemote, setIsFetchingRemote] = useState(false);
   
   // Real-time clock for scheduled countdowns
   const [currentTime, setCurrentTime] = useState(Date.now());
@@ -36,21 +36,6 @@ export default function TestDetails() {
   }, []);
 
   const test = tests.find(t => t.id === testId);
-
-  // If opened directly from a shared link and not yet in store, fetch from Firestore
-  useEffect(() => {
-    if (!test && testId && !isFetchingRemote) {
-      setIsFetchingRemote(true);
-      fetchTestByIdFromFirestore(testId).then((fetchedTest) => {
-        if (fetchedTest) {
-          importTests([fetchedTest]);
-        }
-        setIsFetchingRemote(false);
-      }).catch(() => {
-        setIsFetchingRemote(false);
-      });
-    }
-  }, [test, testId, isFetchingRemote, importTests]);
 
   
   
@@ -130,16 +115,6 @@ export default function TestDetails() {
   }, [test]);
 
   if (!test) {
-    if (isFetchingRemote) {
-      return (
-        <div className="w-full max-w-md mx-auto text-center py-20 flex flex-col items-center">
-          <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4" />
-          <h2 className="text-lg font-bold text-slate-800">Loading Shared Mock Test...</h2>
-          <p className="text-xs text-slate-500 mt-1">Retrieving test paper securely from Firebase.</p>
-        </div>
-      );
-    }
-
     return (
       <div className="w-full max-w-md mx-auto text-center py-16 px-4">
         <div className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4 text-slate-400">
@@ -149,7 +124,7 @@ export default function TestDetails() {
         <p className="text-xs text-slate-500 mt-2 leading-relaxed">
           The requested test link may be invalid, deleted, or you may not have permission to view it.
         </p>
-        <button onClick={() => navigate('/tests')} className="mt-6 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-colors shadow-xs">
+        <button onClick={() => navigate('/tests')} className="mt-6 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-colors shadow-xs cursor-pointer">
           Back to All Tests
         </button>
       </div>
@@ -486,7 +461,6 @@ export default function TestDetails() {
                       <button
                         onClick={() => {
                           clearActiveTestSession(test.id);
-                          if (user) saveToFirestore(user.uid, useStore.getState());
                           navigate(`/test/${test.id}?fresh=true`);
                         }}
                         className="w-full h-9 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors flex items-center justify-center gap-2 font-semibold text-xs border border-slate-200"
@@ -703,12 +677,8 @@ export default function TestDetails() {
                     onClick={async () => {
                       if (test) {
                         const idToDelete = test.id;
-                        deleteTest(idToDelete);
+                        await deleteDriveTest(idToDelete);
                         setShowDeleteModal(false);
-                        if (user?.uid) {
-                          await deleteTestFromFirestore(idToDelete);
-                          saveToFirestore(user.uid, null, true);
-                        }
                         navigate('/tests');
                       }
                     }}
@@ -750,9 +720,9 @@ export default function TestDetails() {
                     Cancel
                   </button>
                   <button
-                    onClick={() => {
+                    onClick={async () => {
                       if (attemptToDelete) {
-                        deleteAttempt(attemptToDelete);
+                        await deleteDriveAttempt(attemptToDelete);
                         setAttemptToDelete(null);
                       }
                     }}
@@ -774,11 +744,13 @@ export default function TestDetails() {
           isOpen={showPersonalityModal}
           onClose={() => setShowPersonalityModal(false)}
           test={test}
-          onSave={(updatedFields) => {
-            updateTest({
+          onSave={async (updatedFields) => {
+            const updated = {
               ...test,
               ...updatedFields
-            });
+            };
+            updateTest(updated);
+            await saveDriveTest(updated);
           }}
         />
       )}

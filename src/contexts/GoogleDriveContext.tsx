@@ -5,8 +5,12 @@ import {
   disconnectDrive,
   backupAllToGoogleDrive,
   restoreAllFromGoogleDrive,
+  refreshFromGoogleDrive,
   listDriveFiles,
   exportTestToGoogleDrive,
+  saveTestToGoogleDrive,
+  deleteTestFromGoogleDrive,
+  deleteAttemptFromGoogleDrive,
   downloadTestFromDrive,
   deleteDriveFile,
   getDriveAutoSync,
@@ -38,10 +42,14 @@ interface GoogleDriveContextType {
   disconnect: () => void;
   backupToDrive: () => Promise<boolean>;
   restoreFromDrive: () => Promise<boolean>;
+  refreshFromDrive: () => Promise<boolean>;
   toggleAutoSync: (enabled?: boolean) => void;
   exportTest: (test: Test) => Promise<boolean>;
+  saveTest: (test: Test) => Promise<boolean>;
+  deleteTest: (testId: string) => Promise<boolean>;
   importTest: (fileId: string) => Promise<Test | null>;
   deleteFile: (fileId: string) => Promise<boolean>;
+  deleteAttempt: (attemptId: string) => Promise<boolean>;
   refreshFiles: () => Promise<void>;
   syncLiveSession: (testId: string, testTitle: string, sessionData: any) => void;
   loadLiveSession: (testId: string, testTitle?: string) => Promise<any | null>;
@@ -65,6 +73,8 @@ export function GoogleDriveProvider({ children }: { children: React.ReactNode })
 
   const importTests = useStore((state) => state.importTests);
   const addAttempt = useStore((state) => state.addAttempt);
+  const deleteStoreTest = useStore((state) => state.deleteTest);
+  const deleteStoreAttempt = useStore((state) => state.deleteAttempt);
 
   const setTimedStatus = (type: 'success' | 'error' | 'info', text: string, duration = 4000) => {
     setStatusMessage({ type, text });
@@ -76,14 +86,17 @@ export function GoogleDriveProvider({ children }: { children: React.ReactNode })
   const clearStatus = () => setStatusMessage(null);
 
   const refreshFiles = useCallback(async () => {
-    if (!isConnected) return;
+    if (!isDriveConnected()) return;
+    setIsSyncing(true);
     try {
       const fileList = await listDriveFiles();
       setFiles(fileList);
     } catch (e: any) {
       console.warn('Failed to fetch Google Drive files list:', e);
+    } finally {
+      setIsSyncing(false);
     }
-  }, [isConnected]);
+  }, []);
 
   // Connect flow
   const connect = async (): Promise<boolean> => {
@@ -92,8 +105,9 @@ export function GoogleDriveProvider({ children }: { children: React.ReactNode })
     try {
       await requestDriveAccessToken(true);
       setIsConnected(true);
-      setTimedStatus('success', 'Google Drive connected successfully! App data folder ready.');
-      refreshFiles();
+      setTimedStatus('success', 'Google Drive connected! App data folder ready.');
+      await refreshFiles();
+      await refreshFromDrive();
       return true;
     } catch (err: any) {
       console.error('Failed to connect Google Drive:', err);
@@ -120,6 +134,7 @@ export function GoogleDriveProvider({ children }: { children: React.ReactNode })
   };
 
   const backupToDrive = async (): Promise<boolean> => {
+    if (!isDriveConnected()) return false;
     setIsSyncing(true);
     try {
       const state = useStore.getState();
@@ -144,6 +159,7 @@ export function GoogleDriveProvider({ children }: { children: React.ReactNode })
   };
 
   const restoreFromDrive = async (): Promise<boolean> => {
+    if (!isDriveConnected()) return false;
     setIsSyncing(true);
     try {
       const payload = await restoreAllFromGoogleDrive();
@@ -153,8 +169,10 @@ export function GoogleDriveProvider({ children }: { children: React.ReactNode })
       if (payload.attempts && payload.attempts.length > 0) {
         payload.attempts.forEach((att) => addAttempt(att));
       }
-      setLastSyncTime(Date.now());
+      const now = Date.now();
+      setLastSyncTime(now);
       setTimedStatus('success', `Restored ${payload.tests?.length || 0} tests & ${payload.attempts?.length || 0} attempts from Google Drive!`);
+      await refreshFiles();
       return true;
     } catch (err: any) {
       console.error('Restore from Drive failed:', err);
@@ -165,11 +183,72 @@ export function GoogleDriveProvider({ children }: { children: React.ReactNode })
     }
   };
 
+  const refreshFromDrive = async (): Promise<boolean> => {
+    if (!isDriveConnected()) return false;
+    setIsSyncing(true);
+    try {
+      const { tests: loadedTests, attempts: loadedAttempts } = await refreshFromGoogleDrive();
+      const now = Date.now();
+      setLastSyncTime(now);
+      await refreshFiles();
+      setTimedStatus('success', `Refreshed from Google Drive: ${loadedTests.length} test(s) loaded.`);
+      return true;
+    } catch (err: any) {
+      console.warn('Refresh from Drive error:', err);
+      setTimedStatus('error', err.message || 'Failed to refresh from Google Drive.');
+      return false;
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const saveTest = async (test: Test): Promise<boolean> => {
+    if (!isDriveConnected()) return false;
+    try {
+      await saveTestToGoogleDrive(test);
+      await refreshFiles();
+      setTimedStatus('success', `Saved "${test.title}" to Google Drive.`);
+      return true;
+    } catch (err: any) {
+      console.warn('Failed to save test to Drive:', err);
+      setTimedStatus('error', err.message || 'Failed to save test to Google Drive.');
+      return false;
+    }
+  };
+
+  const deleteTest = async (testId: string): Promise<boolean> => {
+    deleteStoreTest(testId);
+    if (!isDriveConnected()) return true;
+    try {
+      await deleteTestFromGoogleDrive(testId);
+      await refreshFiles();
+      setTimedStatus('info', 'Test removed from Google Drive.');
+      return true;
+    } catch (err: any) {
+      console.warn('Failed to delete test from Drive:', err);
+      return false;
+    }
+  };
+
+  const deleteAttempt = async (attemptId: string): Promise<boolean> => {
+    deleteStoreAttempt(attemptId);
+    if (!isDriveConnected()) return true;
+    try {
+      await deleteAttemptFromGoogleDrive(attemptId);
+      await refreshFiles();
+      setTimedStatus('info', 'Attempt removed from Google Drive.');
+      return true;
+    } catch (err: any) {
+      console.warn('Failed to delete attempt from Drive:', err);
+      return false;
+    }
+  };
+
   const exportTest = async (test: Test): Promise<boolean> => {
     setIsSyncing(true);
     try {
       await exportTestToGoogleDrive(test);
-      setTimedStatus('success', `"${test.title}" saved to your Google Drive folder.`);
+      setTimedStatus('success', `"${test.title}" exported to Google Drive folder.`);
       await refreshFiles();
       return true;
     } catch (err: any) {
@@ -271,7 +350,7 @@ export function GoogleDriveProvider({ children }: { children: React.ReactNode })
         const state = useStore.getState();
         backupAllToGoogleDrive({
           tests: state.tests,
-          attempts: state.attempts,
+          attempts: [...state.attempts, attempt],
         }).catch(() => {});
         refreshFiles();
         return fileId;
@@ -283,12 +362,14 @@ export function GoogleDriveProvider({ children }: { children: React.ReactNode })
     [refreshFiles]
   );
 
-  // Load files list on mount if connected
+  // Auto-refresh from Google Drive on startup / page refresh if token exists
   useEffect(() => {
-    if (isConnected) {
+    if (isDriveConnected()) {
+      setIsConnected(true);
       refreshFiles();
+      refreshFromDrive();
     }
-  }, [isConnected, refreshFiles]);
+  }, []);
 
   // Auto-sync debounced trigger when store state changes if autoSync is true
   const lastSyncRef = useRef<number>(Date.now());
@@ -297,9 +378,6 @@ export function GoogleDriveProvider({ children }: { children: React.ReactNode })
 
     let timeoutId: any;
     const unsub = useStore.subscribe((state) => {
-      // Don't auto-sync more often than every 30 seconds for full store backups
-      if (Date.now() - lastSyncRef.current < 30000) return;
-
       clearTimeout(timeoutId);
       timeoutId = setTimeout(() => {
         lastSyncRef.current = Date.now();
@@ -312,7 +390,7 @@ export function GoogleDriveProvider({ children }: { children: React.ReactNode })
             refreshFiles();
           })
           .catch((err) => console.warn('Auto-sync to Google Drive error:', err));
-      }, 4000);
+      }, 1500); // Fast 1.5s auto-save to Google Drive
     });
 
     return () => {
@@ -337,10 +415,14 @@ export function GoogleDriveProvider({ children }: { children: React.ReactNode })
         disconnect,
         backupToDrive,
         restoreFromDrive,
+        refreshFromDrive,
         toggleAutoSync,
         exportTest,
+        saveTest,
+        deleteTest,
         importTest,
         deleteFile,
+        deleteAttempt,
         refreshFiles,
         syncLiveSession,
         loadLiveSession,
@@ -361,4 +443,3 @@ export function useGoogleDrive() {
   }
   return context;
 }
-

@@ -13,13 +13,10 @@ import SettingsPage from './pages/Settings';
 import { motion } from 'motion/react';
 import { useAuth } from './contexts/AuthContext';
 
-import firebaseConfig from '../firebase-applet-config.json';
-
 import { initDB } from './lib/db';
 
 const AuthGuard = ({ children }: { children: React.ReactNode }) => {
   const { user, loading, isSigningIn, authError, signInWithGoogle } = useAuth();
-  const projectId = firebaseConfig?.projectId || 'your-firebase-project';
   const [dbReady, setDbReady] = React.useState(false);
 
   React.useEffect(() => {
@@ -49,31 +46,16 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
 
           <h1 className="text-3xl font-black text-slate-800 tracking-tight">Mockly</h1>
           <p className="text-slate-500 text-sm mt-3 leading-relaxed">
-            Please sign in with Google to access mock tests, import custom test papers, and sync your progress securely with Firebase.
+            Sign in with your Google account to access your mock tests, candidate attempts, and automatically sync your data directly to your personal <strong>Google Drive</strong>.
           </p>
 
           {authError && (
-            <div className="w-full bg-amber-50 text-amber-900 border border-amber-200 text-xs p-4 rounded-2xl mt-4 text-left space-y-2">
-              <div className="font-bold flex items-center gap-1.5 text-amber-800">
-                <span>⚠️ Firebase Authorized Domain Required</span>
+            <div className="w-full bg-rose-50 text-rose-900 border border-rose-200 text-xs p-4 rounded-2xl mt-4 text-left space-y-2">
+              <div className="font-bold flex items-center gap-1.5 text-rose-800">
+                <span>Sign-In Error</span>
               </div>
-              <p className="text-amber-700 leading-relaxed">
-                Your current domain is not yet added to your Firebase project's <strong>Authorized Domains</strong> list.
-              </p>
-              <div className="bg-white/80 border border-amber-200 rounded-lg p-2 flex items-center justify-between gap-2 font-mono text-[11px] text-slate-800">
-                <span className="truncate">{window.location.hostname}</span>
-                <button
-                  type="button"
-                  onClick={() => navigator.clipboard.writeText(window.location.hostname)}
-                  className="px-2 py-0.5 bg-amber-200/60 hover:bg-amber-200 text-amber-900 rounded text-[10px] font-bold shrink-0 transition-colors"
-                >
-                  Copy Domain
-                </button>
-              </div>
-              <p className="text-[11px] text-amber-700">
-                1. Go to <a href={`https://console.firebase.google.com/project/${projectId}/authentication/settings`} target="_blank" rel="noreferrer" className="underline font-bold text-amber-900 hover:text-amber-950">Firebase Console &gt; Authentication &gt; Settings &gt; Authorized domains</a>.<br />
-                2. Click <strong>Add domain</strong> and paste <code>{window.location.hostname}</code>.<br />
-                3. Click <strong>Save</strong> and retry signing in.
+              <p className="text-rose-700 leading-relaxed">
+                {authError}
               </p>
             </div>
           )}
@@ -104,7 +86,7 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
           </motion.button>
 
           <p className="text-xs text-slate-400 mt-6">
-            Authentication required to protect tests and sync data.
+            All your data is securely and privately stored in your Google Drive.
           </p>
         </motion.div>
       </div>
@@ -224,6 +206,7 @@ const AppLayout = ({ children }: { children: React.ReactNode }) => {
 };
 
 import { HeaderProvider } from './contexts/HeaderContext';
+import { ActiveTestRedirect } from './components/ActiveTestRedirect';
 import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
 
@@ -232,6 +215,7 @@ export default function App() {
     <HeaderProvider>
       <Router>
         <AuthGuard>
+          <ActiveTestRedirect />
           <Routes>
             <Route path="/" element={<AppLayout><Dashboard /></AppLayout>} />
             <Route path="/tests" element={<AppLayout><Tests /></AppLayout>} />

@@ -1,5 +1,12 @@
-import firebaseConfig from '../../firebase-applet-config.json';
 import { Test, TestAttempt } from '../types';
+import { useStore } from '../store/useStore';
+
+export interface GoogleUserProfile {
+  uid: string;
+  email: string;
+  displayName: string;
+  photoURL: string;
+}
 
 export interface DriveBackupFile {
   id: string;
@@ -9,6 +16,7 @@ export interface DriveBackupFile {
   createdTime?: string;
   modifiedTime?: string;
   isFullBackup?: boolean;
+  isFolder?: boolean;
 }
 
 export interface DriveBackupPayload {
@@ -23,11 +31,10 @@ export interface DriveBackupPayload {
 
 const FOLDER_NAME = 'Mockly App Data';
 const BACKUP_FILENAME = 'mockly_full_backup.json';
-const SCOPE = 'https://www.googleapis.com/auth/drive.file';
+const SCOPE = 'openid email profile https://www.googleapis.com/auth/drive.file';
 
-const GOOGLE_CLIENT_ID =
+export const GOOGLE_CLIENT_ID =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GOOGLE_CLIENT_ID) ||
-  firebaseConfig.oAuthClientId ||
   '449615236612-atqbkv0qddttm4r61do61ad0m64nsp3u.apps.googleusercontent.com';
 
 const STORAGE_KEY_TOKEN = 'mockly_gdrive_access_token';
@@ -35,10 +42,48 @@ const STORAGE_KEY_EXPIRY = 'mockly_gdrive_token_expiry';
 const STORAGE_KEY_AUTO_SYNC = 'mockly_gdrive_auto_sync';
 const STORAGE_KEY_LAST_SYNC = 'mockly_gdrive_last_sync';
 const STORAGE_KEY_FOLDER_ID = 'mockly_gdrive_folder_id';
+const STORAGE_KEY_USER_PROFILE = 'mockly_user_profile';
 
 let tokenClientInstance: any = null;
 let activeFolderId: string | null = localStorage.getItem(STORAGE_KEY_FOLDER_ID);
 const fileIdCache = new Map<string, string>();
+
+/**
+ * Fetches user profile from Google OAuth UserInfo endpoint
+ */
+export async function fetchGoogleUserProfile(token: string): Promise<GoogleUserProfile> {
+  const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!res.ok) {
+    throw new Error('Failed to retrieve user profile from Google.');
+  }
+  const data = await res.json();
+  const profile: GoogleUserProfile = {
+    uid: data.sub,
+    email: data.email || '',
+    displayName: data.name || data.given_name || 'Google User',
+    photoURL: data.picture || '',
+  };
+  localStorage.setItem(STORAGE_KEY_USER_PROFILE, JSON.stringify(profile));
+  return profile;
+}
+
+export function getStoredUserProfile(): GoogleUserProfile | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_USER_PROFILE);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Escapes single quotes and backslashes for Google Drive search queries
+ */
+function escapeDriveQueryString(str: string): string {
+  return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
 
 /**
  * Checks if the stored access token is still valid.
@@ -63,7 +108,8 @@ export function isDriveConnected(): boolean {
 }
 
 export function getDriveAutoSync(): boolean {
-  return localStorage.getItem(STORAGE_KEY_AUTO_SYNC) === 'true';
+  const val = localStorage.getItem(STORAGE_KEY_AUTO_SYNC);
+  return val === null ? true : val === 'true';
 }
 
 export function setDriveAutoSync(enabled: boolean) {
@@ -87,6 +133,9 @@ export function disconnectDrive() {
   localStorage.removeItem(STORAGE_KEY_TOKEN);
   localStorage.removeItem(STORAGE_KEY_EXPIRY);
   localStorage.removeItem(STORAGE_KEY_FOLDER_ID);
+  localStorage.removeItem(STORAGE_KEY_USER_PROFILE);
+  fileIdCache.clear();
+  activeFolderId = null;
 }
 
 /**
@@ -125,6 +174,7 @@ export async function requestDriveAccessToken(forcePrompt = false): Promise<stri
 
               localStorage.setItem(STORAGE_KEY_TOKEN, response.access_token);
               localStorage.setItem(STORAGE_KEY_EXPIRY, expiryTime.toString());
+              localStorage.setItem(STORAGE_KEY_AUTO_SYNC, 'true');
 
               resolve(response.access_token);
             } else {
@@ -142,7 +192,6 @@ export async function requestDriveAccessToken(forcePrompt = false): Promise<stri
     if (checkGSI()) {
       initClientAndRequest();
     } else {
-      // Retry for up to 3 seconds in case script is loading
       let attempts = 0;
       const interval = setInterval(() => {
         attempts++;
@@ -167,7 +216,7 @@ export async function getOrCreateAppFolder(token: string): Promise<string> {
   }
 
   const query = encodeURIComponent(
-    `name = '${FOLDER_NAME}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`
+    `name = '${escapeDriveQueryString(FOLDER_NAME)}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`
   );
 
   const searchRes = await fetch(
@@ -230,10 +279,10 @@ async function uploadOrUpdateFile(
   const cacheKey = `${folderId}:${filename}`;
   let existingFileId = fileIdCache.get(cacheKey) || null;
 
-  // If not cached, check if file already exists in folder
+  // Check if file exists in folder if not in memory cache
   if (!existingFileId) {
     const query = encodeURIComponent(
-      `name = '${filename}' and '${folderId}' in parents and trashed = false`
+      `name = '${escapeDriveQueryString(filename)}' and '${folderId}' in parents and trashed = false`
     );
 
     const checkRes = await fetch(
@@ -261,7 +310,7 @@ async function uploadOrUpdateFile(
   const boundary = '-------314159265358979323846';
   const delimiter = `\r\n--${boundary}\r\n`;
   const closeDelimiter = `\r\n--${boundary}--`;
-  
+
   let body: BodyInit;
   let headers: HeadersInit = {
     Authorization: `Bearer ${token}`,
@@ -276,25 +325,18 @@ async function uploadOrUpdateFile(
       `Content-Type: ${mimeType}\r\n\r\n` +
       content +
       closeDelimiter;
-      
+
     body = multipartRequestBody;
     headers['Content-Type'] = `multipart/related; boundary=${boundary}`;
   } else {
-    // For binary data, we use simple upload (or resumable for larger, but simple is ok for now if < 5MB)
-    // Actually, multipart works for binary if we encode or use a FormData, but the simplest is to just use a multipart blob if possible.
-    // Let's use simple upload to just overwrite the file if existing, or create new.
-    // We can use a FormData to create a multipart request easily for binary.
     const form = new FormData();
     form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
     form.append('file', new Blob([content], { type: mimeType }));
     body = form;
-    // Do not set Content-Type header when using FormData; the browser will set it with the correct boundary
   }
 
   const url = existingFileId
-    ? (typeof content === 'string' 
-      ? `https://www.googleapis.com/upload/drive/v3/files/${existingFileId}?uploadType=multipart`
-      : `https://www.googleapis.com/upload/drive/v3/files/${existingFileId}?uploadType=multipart`)
+    ? `https://www.googleapis.com/upload/drive/v3/files/${existingFileId}?uploadType=multipart`
     : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
 
   const uploadRes = await fetch(url, {
@@ -304,10 +346,13 @@ async function uploadOrUpdateFile(
   });
 
   if (!uploadRes.ok) {
-    // If PATCH failed (e.g. 404 file deleted in drive), clear cache and try POST once
     if (existingFileId && (uploadRes.status === 404 || uploadRes.status === 400)) {
       fileIdCache.delete(cacheKey);
       return uploadOrUpdateFile(token, folderId, filename, content, mimeType);
+    }
+    if (uploadRes.status === 401) {
+      disconnectDrive();
+      throw new Error('Google Drive authorization expired. Please reconnect.');
     }
     throw new Error(`Failed to upload to Google Drive: ${uploadRes.statusText}`);
   }
@@ -321,7 +366,11 @@ async function uploadOrUpdateFile(
 /**
  * Backs up entire store to Google Drive
  */
-export async function backupAllToGoogleDrive(state: { tests: Test[]; attempts: TestAttempt[]; settings?: any }): Promise<{ success: boolean; fileId: string; timestamp: number }> {
+export async function backupAllToGoogleDrive(state: {
+  tests: Test[];
+  attempts: TestAttempt[];
+  settings?: any;
+}): Promise<{ success: boolean; fileId: string; timestamp: number }> {
   const token = await requestDriveAccessToken();
   const folderId = await getOrCreateAppFolder(token);
 
@@ -349,14 +398,16 @@ export async function backupAllToGoogleDrive(state: { tests: Test[]; attempts: T
 }
 
 /**
- * Restores entire store from the backup file in Google Drive
+ * Restores entire store from Google Drive.
+ * If mockly_full_backup.json exists, uses that.
+ * Otherwise, scans for [Test] and [Attempt] individual files and aggregates them.
  */
 export async function restoreAllFromGoogleDrive(): Promise<DriveBackupPayload> {
   const token = await requestDriveAccessToken();
   const folderId = await getOrCreateAppFolder(token);
 
   const query = encodeURIComponent(
-    `name = '${BACKUP_FILENAME}' and '${folderId}' in parents and trashed = false`
+    `name = '${escapeDriveQueryString(BACKUP_FILENAME)}' and '${folderId}' in parents and trashed = false`
   );
 
   const checkRes = await fetch(
@@ -367,67 +418,267 @@ export async function restoreAllFromGoogleDrive(): Promise<DriveBackupPayload> {
   );
 
   if (!checkRes.ok) {
+    if (checkRes.status === 401) {
+      disconnectDrive();
+      throw new Error('Google Drive token expired. Please reconnect.');
+    }
     throw new Error('Failed to locate backup file on Google Drive.');
   }
 
   const data = await checkRes.json();
-  if (!data.files || data.files.length === 0) {
-    throw new Error('No Mockly backup found in your Google Drive folder.');
-  }
+  if (data.files && data.files.length > 0) {
+    const fileId = data.files[0].id;
+    const downloadRes = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      }
+    );
 
-  const fileId = data.files[0].id;
-
-  // Download content
-  const downloadRes = await fetch(
-    `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
-    {
-      headers: { Authorization: `Bearer ${token}` },
+    if (downloadRes.ok) {
+      const payload: DriveBackupPayload = await downloadRes.json();
+      if (payload && (Array.isArray(payload.tests) || Array.isArray(payload.attempts))) {
+        return payload;
+      }
     }
-  );
-
-  if (!downloadRes.ok) {
-    throw new Error('Failed to download backup content from Google Drive.');
   }
 
-  const payload: DriveBackupPayload = await downloadRes.json();
-  if (!payload || (!payload.tests && !payload.attempts)) {
-    throw new Error('Backup file format is invalid.');
+  // Fallback: Scan all individual [Test] *.json and [Attempt] *.json files in folder
+  const allFiles = await listDriveFiles();
+  const loadedTests: Test[] = [];
+  const loadedAttempts: TestAttempt[] = [];
+
+  for (const f of allFiles) {
+    if (f.name.startsWith('[Test] ') && f.name.endsWith('.json')) {
+      try {
+        const test = await downloadTestFromDrive(f.id);
+        if (test && test.id) loadedTests.push(test);
+      } catch (err) {
+        console.warn(`Could not parse test file ${f.name}:`, err);
+      }
+    } else if (f.name.startsWith('[Attempt] ') && f.name.endsWith('.json')) {
+      try {
+        const downloadRes = await fetch(`https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (downloadRes.ok) {
+          const attemptData = await downloadRes.json();
+          if (attemptData?.attempt) {
+            loadedAttempts.push(attemptData.attempt);
+          } else if (attemptData?.testId) {
+            loadedAttempts.push(attemptData);
+          }
+        }
+      } catch (err) {
+        console.warn(`Could not parse attempt file ${f.name}:`, err);
+      }
+    }
   }
 
-  return payload;
+  return {
+    version: 1,
+    appName: 'Mockly',
+    timestamp: Date.now(),
+    backupDate: new Date().toISOString(),
+    tests: loadedTests,
+    attempts: loadedAttempts,
+  };
+}
+
+/**
+ * Refreshes local Zustand store directly from Google Drive storage
+ */
+export async function refreshFromGoogleDrive(): Promise<{ tests: Test[]; attempts: TestAttempt[] }> {
+  const payload = await restoreAllFromGoogleDrive();
+  const store = useStore.getState();
+
+  if (payload.tests && payload.tests.length > 0) {
+    store.importTests(payload.tests);
+  }
+  if (payload.attempts && payload.attempts.length > 0) {
+    payload.attempts.forEach((att) => store.addAttempt(att));
+  }
+
+  const now = Date.now();
+  localStorage.setItem(STORAGE_KEY_LAST_SYNC, now.toString());
+  store.setSyncStatus('synced', now);
+
+  return {
+    tests: store.tests,
+    attempts: store.attempts,
+  };
 }
 
 /**
  * Exports a single test paper into the user's Google Drive folder
  */
+
+async function getTestFolderId(token: string, rootFolderId: string, testId: string, testTitle?: string, subfolder?: string): Promise<string> {
+  const state = useStore.getState();
+  const test = state.tests.find((t: any) => t.id === testId);
+  
+  const cleanTitle = (testTitle || test?.title || 'Untitled_Test').replace(/[/\\?%*:|"<>]/g, '_');
+  const testFolderName = `[Test] ${cleanTitle}_${testId}`;
+
+  const path: string[] = [];
+  if (test?.examCategory) path.push(test.examCategory);
+  if (test?.exam?.tier) path.push(test.exam.tier);
+  path.push(testFolderName);
+  if (subfolder) path.push(subfolder);
+
+  return getOrCreatePath(token, rootFolderId, path);
+}
+
 export async function exportTestToGoogleDrive(test: Test): Promise<string> {
   const token = await requestDriveAccessToken();
-  const folderId = await getOrCreateAppFolder(token);
+  const rootFolderId = await getOrCreateAppFolder(token);
+
+  const folderId = await getTestFolderId(token, rootFolderId, test.id, test.title);
 
   const cleanTitle = (test.title || 'Untitled_Test').replace(/[/\\?%*:|"<>]/g, '_');
-  const filename = `[Test] ${cleanTitle}.json`;
+  const filename = `[Test] ${cleanTitle}_${test.id}.json`;
   const content = JSON.stringify(test, null, 2);
 
   const fileId = await uploadOrUpdateFile(token, folderId, filename, content);
+
+  // Also update master backup in Drive in background
+  const state = useStore.getState();
+  const existingIndex = state.tests.findIndex((t) => t.id === test.id);
+  const updatedTests = existingIndex >= 0
+    ? state.tests.map((t) => (t.id === test.id ? test : t))
+    : [...state.tests, test];
+
+  backupAllToGoogleDrive({
+    tests: updatedTests,
+    attempts: state.attempts,
+  }).catch(() => {});
+
   return fileId;
+}
+
+/**
+ * Saves or updates a test in Google Drive (both individual file and master backup)
+ */
+export async function saveTestToGoogleDrive(test: Test): Promise<string> {
+  return exportTestToGoogleDrive(test);
+}
+
+/**
+ * Deletes a test from Google Drive (removes from master backup and deletes individual files)
+ */
+export async function deleteTestFromGoogleDrive(testId: string): Promise<boolean> {
+  if (!isDriveConnected()) return false;
+  try {
+    const token = await requestDriveAccessToken();
+    const folderId = await getOrCreateAppFolder(token);
+
+    // 1. Search and delete any test files OR folders associated with this testId
+    // Since testId is a UUID, it is safe to search globally (without restricting to parent folder)
+    const query = encodeURIComponent(
+      `name contains '${escapeDriveQueryString(testId)}' and trashed = false`
+    );
+
+    const res = await fetch(
+      `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id, name)`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      }
+    );
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.files && data.files.length > 0) {
+        for (const f of data.files) {
+          await deleteDriveFile(f.id);
+          fileIdCache.delete(`${folderId}:${f.name}`);
+        }
+      }
+    }
+
+    // 2. Update master backup
+    const state = useStore.getState();
+    const filteredTests = state.tests.filter((t) => t.id !== testId);
+    const filteredAttempts = state.attempts.filter((a) => a.testId !== testId);
+
+    await backupAllToGoogleDrive({
+      tests: filteredTests,
+      attempts: filteredAttempts,
+    });
+
+    return true;
+  } catch (err) {
+    console.warn('Failed to delete test from Google Drive:', err);
+    return false;
+  }
+}
+
+/**
+ * Deletes an attempt from Google Drive
+ */
+export async function deleteAttemptFromGoogleDrive(attemptId: string): Promise<boolean> {
+  if (!isDriveConnected()) return false;
+  try {
+    const token = await requestDriveAccessToken();
+    const folderId = await getOrCreateAppFolder(token);
+
+    // 1. Delete individual attempt file if exists
+    const query = encodeURIComponent(
+      `name contains '${escapeDriveQueryString(attemptId)}' and trashed = false`
+    );
+
+    const res = await fetch(
+      `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id, name)`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      }
+    );
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.files && data.files.length > 0) {
+        for (const f of data.files) {
+          await deleteDriveFile(f.id);
+          fileIdCache.delete(`${folderId}:${f.name}`);
+        }
+      }
+    }
+
+    // 2. Update master backup
+    const state = useStore.getState();
+    const filteredAttempts = state.attempts.filter((a) => a.id !== attemptId);
+
+    await backupAllToGoogleDrive({
+      tests: state.tests,
+      attempts: filteredAttempts,
+    });
+
+    return true;
+  } catch (err) {
+    console.warn('Failed to delete attempt from Google Drive:', err);
+    return false;
+  }
 }
 
 /**
  * Lists all backup files & exported test papers in user's Google Drive folder
  */
-export async function listDriveFiles(): Promise<DriveBackupFile[]> {
+export async function listDriveFiles(parentFolderId?: string): Promise<DriveBackupFile[]> {
   const token = await requestDriveAccessToken();
-  const folderId = await getOrCreateAppFolder(token);
+  const folderId = parentFolderId || await getOrCreateAppFolder(token);
 
   const query = encodeURIComponent(`'${folderId}' in parents and trashed = false`);
   const res = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id, name, mimeType, size, createdTime, modifiedTime)&orderBy=modifiedTime desc`,
+    `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id, name, mimeType, size, createdTime, modifiedTime)&orderBy=folder, modifiedTime desc`,
     {
       headers: { Authorization: `Bearer ${token}` },
     }
   );
 
   if (!res.ok) {
+    if (res.status === 401) {
+      disconnectDrive();
+      throw new Error('Google Drive authorization expired. Please reconnect.');
+    }
     throw new Error('Failed to list files from Google Drive.');
   }
 
@@ -440,6 +691,7 @@ export async function listDriveFiles(): Promise<DriveBackupFile[]> {
     createdTime: f.createdTime,
     modifiedTime: f.modifiedTime,
     isFullBackup: f.name === BACKUP_FILENAME,
+    isFolder: f.mimeType === 'application/vnd.google-apps.folder',
   }));
 
   return files;
@@ -480,7 +732,7 @@ export async function deleteDriveFile(fileId: string): Promise<boolean> {
 }
 
 /**
- * Saves live candidate test session (answers, marked status, timers, visited state) directly to Google Drive.
+ * Saves live candidate test session directly to Google Drive
  */
 export async function saveLiveTestSessionToDrive(
   testId: string,
@@ -488,7 +740,8 @@ export async function saveLiveTestSessionToDrive(
   sessionData: any
 ): Promise<string> {
   const token = await requestDriveAccessToken();
-  const folderId = await getOrCreateAppFolder(token);
+  const rootFolderId = await getOrCreateAppFolder(token);
+  const folderId = await getTestFolderId(token, rootFolderId, testId, testTitle);
 
   const cleanTitle = (testTitle || 'Test').replace(/[/\\?%*:|"<>]/g, '_');
   const filename = `[Live Session] ${cleanTitle}_${testId}.json`;
@@ -509,7 +762,7 @@ export async function saveLiveTestSessionToDrive(
 }
 
 /**
- * Retrieves live test session from Google Drive if one was previously saved
+ * Retrieves live test session from Google Drive
  */
 export async function getLiveTestSessionFromDrive(
   testId: string,
@@ -517,7 +770,8 @@ export async function getLiveTestSessionFromDrive(
 ): Promise<any | null> {
   try {
     const token = await requestDriveAccessToken();
-    const folderId = await getOrCreateAppFolder(token);
+    const rootFolderId = await getOrCreateAppFolder(token);
+    const folderId = await getTestFolderId(token, rootFolderId, testId, testTitle);
 
     const cleanTitle = (testTitle || '').replace(/[/\\?%*:|"<>]/g, '_');
     const filename = cleanTitle
@@ -525,8 +779,8 @@ export async function getLiveTestSessionFromDrive(
       : undefined;
 
     const query = filename
-      ? encodeURIComponent(`name = '${filename}' and '${folderId}' in parents and trashed = false`)
-      : encodeURIComponent(`name contains '${testId}' and '${folderId}' in parents and trashed = false`);
+      ? encodeURIComponent(`name = '${escapeDriveQueryString(filename)}' and trashed = false`)
+      : encodeURIComponent(`name contains '${escapeDriveQueryString(testId)}' and trashed = false`);
 
     const checkRes = await fetch(
       `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id, name, modifiedTime)`,
@@ -573,8 +827,8 @@ export async function deleteLiveTestSessionFromDrive(
       : undefined;
 
     const query = filename
-      ? encodeURIComponent(`name = '${filename}' and '${folderId}' in parents and trashed = false`)
-      : encodeURIComponent(`name contains '${testId}' and '${folderId}' in parents and trashed = false`);
+      ? encodeURIComponent(`name = '${escapeDriveQueryString(filename)}' and trashed = false`)
+      : encodeURIComponent(`name contains '${escapeDriveQueryString(testId)}' and trashed = false`);
 
     const checkRes = await fetch(
       `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id, name)`,
@@ -606,7 +860,8 @@ export async function saveCompletedAttemptToDrive(
   testTitle?: string
 ): Promise<string> {
   const token = await requestDriveAccessToken();
-  const folderId = await getOrCreateAppFolder(token);
+  const rootFolderId = await getOrCreateAppFolder(token);
+  const folderId = await getTestFolderId(token, rootFolderId, attempt.testId, testTitle, 'attempts');
 
   const cleanTitle = (testTitle || 'Test_Attempt').replace(/[/\\?%*:|"<>]/g, '_');
   const dateStr = new Date(attempt.endTime || Date.now()).toISOString().replace(/[:.]/g, '-');
@@ -673,7 +928,6 @@ export function queueLiveSessionDriveSync(
       itemToProcess.callback?.('error', err.message);
     } finally {
       isLiveSyncInFlight = false;
-      // If a newer item was queued while this one was uploading, process it immediately
       if (pendingLiveQueue) {
         queueLiveSessionDriveSync(
           pendingLiveQueue.testId,
@@ -683,7 +937,7 @@ export function queueLiveSessionDriveSync(
         );
       }
     }
-  }, 400); // 400ms debounce ensures immediate response without excessive round-trips
+  }, 400);
 }
 
 /**
@@ -738,4 +992,33 @@ export async function loadDatabaseFromDrive(): Promise<Uint8Array | null> {
     console.warn('Could not load database from Google Drive:', err);
     return null;
   }
+}
+export async function getOrCreatePath(token: string, rootFolderId: string, path: string[]): Promise<string> {
+  let currentFolderId = rootFolderId;
+  for (const folderName of path) {
+    if (!folderName) continue;
+    const query = encodeURIComponent(
+      `name = '${folderName.replace(/'/g, "\\'")}' and '${currentFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`
+    );
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id)`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const data = await res.json();
+    if (data.files && data.files.length > 0) {
+      currentFolderId = data.files[0].id;
+    } else {
+      const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: folderName,
+          mimeType: 'application/vnd.google-apps.folder',
+          parents: [currentFolderId]
+        })
+      });
+      const createData = await createRes.json();
+      currentFolderId = createData.id;
+    }
+  }
+  return currentFolderId;
 }

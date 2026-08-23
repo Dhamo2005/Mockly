@@ -2,13 +2,15 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store/useStore';
-import { PlayCircle, CheckCircle2, Clock, BarChart, Trash2, ArrowRight, Loader2, Calendar } from 'lucide-react';
+import { useGoogleDrive } from '../contexts/GoogleDriveContext';
+import { PlayCircle, CheckCircle2, Clock, BarChart, Trash2, ArrowRight, Loader2, Calendar, RefreshCw, HardDrive } from 'lucide-react';
 import { Ripple } from '../components/Ripple';
 import { motion, AnimatePresence } from 'motion/react';
 import { getAttemptDate } from '../lib/dateUtils';
 
 export default function Dashboard() {
-  const { tests, attempts, deleteAttempt, isInitialized } = useStore();
+  const { tests, attempts, isInitialized } = useStore();
+  const { isConnected: isDriveConnected, isSyncing: isDriveSyncing, refreshFromDrive, deleteAttempt } = useGoogleDrive();
   const navigate = useNavigate();
   const [attemptToDelete, setAttemptToDelete] = useState<string | null>(null);
 
@@ -80,8 +82,19 @@ export default function Dashboard() {
       animate="show"
       className="w-full max-w-7xl mx-auto space-y-4 md:space-y-6"
     >
-      <motion.div variants={itemVariants} className="pt-0 md:pt-2">
+      <motion.div variants={itemVariants} className="pt-0 md:pt-2 flex items-center justify-between">
         <h2 className="text-xl md:text-2xl font-bold text-slate-800 tracking-tight">Dashboard</h2>
+        {isDriveConnected && (
+          <button
+            onClick={() => refreshFromDrive()}
+            disabled={isDriveSyncing}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl text-xs font-semibold shadow-xs transition-colors disabled:opacity-50"
+            title="Refresh latest tests and attempts from Google Drive"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isDriveSyncing ? 'animate-spin text-blue-600' : 'text-slate-500'}`} />
+            <span>{isDriveSyncing ? 'Refreshing...' : 'Refresh from Drive'}</span>
+          </button>
+        )}
       </motion.div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

@@ -1,33 +1,14 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
-import { getAnalytics, isSupported } from 'firebase/analytics';
-import firebaseConfig from '../../firebase-applet-config.json';
+import { 
+  fetchGoogleUserProfile, 
+  getStoredUserProfile, 
+  requestDriveAccessToken, 
+  disconnectDrive, 
+  getValidDriveToken 
+} from '../lib/googleDriveSync';
 import { useStore } from '../store/useStore';
 
-export const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-export const auth = getAuth(app);
-const databaseId = (firebaseConfig as any).firestoreDatabaseId;
-export const db = databaseId ? getFirestore(app, databaseId) : getFirestore(app);
-
-// Initialize Firebase Analytics if supported in current environment
-export let analytics: any = null;
-if (typeof window !== 'undefined') {
-  isSupported().then(supported => {
-    if (supported) {
-      analytics = getAnalytics(app);
-    }
-  }).catch(() => {
-    // Analytics not supported in this environment
-  });
-}
-
-const provider = new GoogleAuthProvider();
-provider.addScope('profile');
-provider.addScope('email');
-
-interface User {
+export interface User {
   uid: string;
   email: string;
   displayName: string;
@@ -54,52 +35,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Test Firestore connection on boot
-    const testConnection = async () => {
+    // Check existing Google Drive session on app launch
+    const initAuth = async () => {
       try {
-        await getDocFromServer(doc(db, 'test', 'connection'));
-      } catch (error) {
-        if (error instanceof Error && error.message.includes('the client is offline')) {
-          console.warn("Firestore connection: client is offline or establishing connection.");
+        const token = getValidDriveToken();
+        const storedProfile = getStoredUserProfile();
+
+        if (token && storedProfile) {
+          setUser(storedProfile);
+        } else if (token) {
+          try {
+            const profile = await fetchGoogleUserProfile(token);
+            setUser(profile);
+          } catch {
+            disconnectDrive();
+            setUser(null);
+          }
+        } else {
+          setUser(null);
         }
-      }
-    };
-    testConnection();
-
-    // Suppress internal Firebase Auth popup cancellation assertion errors
-    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
-      const msg = event.reason?.message || String(event.reason || '');
-      const code = event.reason?.code;
-      if (
-        code === 'auth/cancelled-popup-request' ||
-        code === 'auth/popup-closed-by-user' ||
-        msg.includes('Pending promise was never set') ||
-        msg.includes('cancelled-popup-request')
-      ) {
-        event.preventDefault();
-      }
-    };
-
-    window.addEventListener('unhandledrejection', handleUnhandledRejection);
-
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
-        setUser({
-          uid: firebaseUser.uid,
-          email: firebaseUser.email || '',
-          displayName: firebaseUser.displayName || 'User',
-          photoURL: firebaseUser.photoURL || '',
-        });
-      } else {
+      } catch (err) {
+        console.warn('Auth initialization check failed:', err);
         setUser(null);
+      } finally {
+        setLoading(false);
+        useStore.getState().setIsInitialized(true);
       }
-      setLoading(false);
-    });
-
-    return () => {
-      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
-      unsubscribe();
     };
+
+    initAuth();
   }, []);
 
   const signInWithGoogle = async () => {
@@ -112,18 +76,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     activeSignInPromise = (async () => {
       try {
-        await signInWithPopup(auth, provider);
+        const token = await requestDriveAccessToken(true);
+        const profile = await fetchGoogleUserProfile(token);
+        setUser(profile);
       } catch (error: any) {
         const msg = error?.message || String(error || '');
-        const code = error?.code;
         if (
-          code === 'auth/cancelled-popup-request' ||
-          code === 'auth/popup-closed-by-user' ||
-          msg.includes('Pending promise was never set') ||
-          msg.includes('cancelled-popup-request')
+          msg.includes('closed') ||
+          msg.includes('cancelled') ||
+          msg.includes('dismissed') ||
+          msg.includes('user_cancel')
         ) {
-          // Expected popup user cancellation or duplicate prevention
-          console.warn('Sign-in popup closed or superseded.');
+          console.warn('Google Sign-in popup closed by user.');
         } else {
           console.error('Sign in error:', error);
           setAuthError(error?.message || 'Failed to sign in with Google');
@@ -139,7 +103,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     try {
-      await auth.signOut();
+      disconnectDrive();
     } catch (e) {
       console.error('Sign out error:', e);
     }

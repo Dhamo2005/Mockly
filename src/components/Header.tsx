@@ -6,11 +6,11 @@ import { useHeader } from '../contexts/HeaderContext';
 import { useStore } from '../store/useStore';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { saveToFirestore } from '../lib/firebaseSync';
+import { GlobalSearch } from './GlobalSearch';
 
 export const Header = () => {
   const { user, isSigningIn, signInWithGoogle, signOut } = useAuth();
-  const { isConnected: isDriveConnected, isSyncing: isDriveSyncing, backupToDrive } = useGoogleDrive();
+  const { isConnected: isDriveConnected, isSyncing: isDriveSyncing, backupToDrive, refreshFromDrive } = useGoogleDrive();
   const { headerContent } = useHeader();
   const { activeTestSessions, tests, attempts, clearActiveTestSession } = useStore();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -104,14 +104,13 @@ export const Header = () => {
     }
 
     if (hasCleaned) {
-      if (user) saveToFirestore(user.uid, useStore.getState());
+      // Cleaned stale active sessions
     }
   }, [activeTestSessions, tests, attempts, clearActiveTestSession]);
 
   const handleDiscardActiveTest = (e: React.MouseEvent, testId: string) => {
     e.stopPropagation();
     clearActiveTestSession(testId);
-    if (user) saveToFirestore(user.uid, useStore.getState());
   };
 
   useEffect(() => {
@@ -128,13 +127,18 @@ export const Header = () => {
   }, []);
 
   return (
-    <header className="bg-white h-12 flex items-center justify-between px-4 sm:px-6 shrink-0 z-20 border-b border-slate-200 relative">
-      <Link to="/" className="flex items-center gap-2 hover:opacity-90 transition-opacity outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded" aria-label="Go to Dashboard">
-        <div className="bg-blue-600 p-1.5 rounded-md shadow-sm text-white flex items-center justify-center">
-          <BookOpen className="h-4 w-4" />
+    <header className="bg-white h-16 flex items-center justify-between px-4 sm:px-6 shrink-0 z-20 border-b border-slate-200 relative">
+      <div className="flex items-center gap-3 sm:gap-6 flex-1 min-w-0">
+        <Link to="/" className="flex items-center gap-2 hover:opacity-90 transition-opacity outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded shrink-0" aria-label="Go to Dashboard">
+          <div className="bg-blue-600 p-2 rounded-lg shadow-sm text-white flex items-center justify-center">
+            <BookOpen className="h-5 w-5" />
+          </div>
+          <h1 className="text-xl font-black text-slate-800 tracking-tight hidden sm:block">Mockly</h1>
+        </Link>
+        <div className="flex-1 min-w-0 max-w-md mx-2 sm:mx-4">
+          <GlobalSearch />
         </div>
-        <h1 className="text-lg font-black text-slate-800 tracking-tight">Mockly</h1>
-      </Link>
+      </div>
 
       {/* Centered Active Test Button - Only shown when a genuine active test exists and not on test page */}
       {activeTest && !isTestPage && (
@@ -167,36 +171,20 @@ export const Header = () => {
 
       <div className="flex items-center gap-2 sm:gap-3">
         {headerContent}
-
-        {/* Quick Google Drive Backup / Status icon */}
-        <button
-          onClick={() => isDriveConnected ? backupToDrive() : navigate('/settings')}
-          disabled={isDriveSyncing}
-          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold border transition-all ${
-            isDriveConnected
-              ? 'bg-emerald-50/80 text-emerald-700 border-emerald-200 hover:bg-emerald-100/80'
-              : 'bg-slate-50 text-slate-500 border-slate-200 hover:text-slate-800 hover:bg-slate-100'
-          }`}
-          title={isDriveConnected ? (isDriveSyncing ? 'Syncing to Drive...' : 'Google Drive Connected — Click to Sync Backup') : 'Connect Google Drive (Settings)'}
-        >
-          <HardDrive className={`w-3.5 h-3.5 ${isDriveSyncing ? 'animate-spin text-emerald-600' : (isDriveConnected ? 'text-emerald-600' : 'text-slate-400')}`} />
-          <span className="hidden md:inline">{isDriveConnected ? (isDriveSyncing ? 'Syncing...' : 'Drive') : 'Drive Off'}</span>
-        </button>
         
         {user ? (
           <div className="relative" ref={dropdownRef}>
             <button 
               onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-              className="flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 hover:bg-slate-50 p-1 rounded-md transition-colors border border-transparent hover:border-slate-200"
+              className="flex items-center focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-full transition-all border-2 border-transparent hover:border-blue-100"
               aria-label="Toggle user menu"
               aria-expanded={isDropdownOpen}
             >
               <img 
                 src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName || 'User'}&background=random`} 
                 alt={`${user.displayName || 'User'}'s profile`} 
-                className="w-7 h-7 rounded border border-slate-200 shadow-xs"
+                className="w-9 h-9 rounded-full object-cover shadow-sm border border-slate-200"
               />
-              <span className="text-xs font-bold hidden sm:block text-slate-700 pr-1">{user.displayName?.split(' ')[0]}</span>
             </button>
             
             <AnimatePresence>

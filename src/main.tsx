@@ -8,14 +8,12 @@ import './index.css';
 import { ErrorBoundary } from "./ErrorBoundary.tsx";
 import { AuthProvider } from './contexts/AuthContext.tsx';
 import { GoogleDriveProvider } from './contexts/GoogleDriveContext.tsx';
-import { FirebaseSync } from './components/FirebaseSync.tsx';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
       <AuthProvider>
         <GoogleDriveProvider>
-          <FirebaseSync />
           <App />
         </GoogleDriveProvider>
       </AuthProvider>

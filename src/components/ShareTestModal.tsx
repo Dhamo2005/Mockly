@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { Test } from '../types';
 import { useAuth } from '../contexts/AuthContext';
-import { updateTestSharingInFirestore, sanitizeTestId } from '../lib/firebaseSync';
+import { useGoogleDrive } from '../contexts/GoogleDriveContext';
 import { useStore } from '../store/useStore';
 
 interface ShareTestModalProps {
@@ -18,24 +18,23 @@ interface ShareTestModalProps {
 
 export function ShareTestModal({ test: initialTest, isOpen, onClose }: ShareTestModalProps) {
   const { user } = useAuth();
-  const tests = useStore(state => state.tests);
+  const { tests, updateTest } = useStore();
+  const { saveTest: saveDriveTest, isConnected: isDriveConnected } = useGoogleDrive();
   
-  // Find current live test state from store if available
-  const cleanId = initialTest ? sanitizeTestId(initialTest.id) : '';
-  const liveTest = tests.find(t => t.id === initialTest?.id || (cleanId && sanitizeTestId(t.id) === cleanId)) || initialTest;
+  const liveTest = tests.find(t => t.id === initialTest?.id) || initialTest;
 
   const [currentVisibility, setCurrentVisibility] = useState<'public' | 'private'>('public');
   const [copiedLink, setCopiedLink] = useState<'details' | 'direct' | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
 
-  // Sync initial state on open or when liveTest updates
+  // Sync initial state on open or when liveTest ID updates
   useEffect(() => {
-    if (liveTest) {
+    if (liveTest && isOpen) {
       const vis: 'public' | 'private' = (liveTest.visibility === 'private' || liveTest.isPublic === false) ? 'private' : 'public';
       setCurrentVisibility(vis);
     }
-  }, [liveTest?.id, liveTest?.visibility, liveTest?.isPublic]);
+  }, [liveTest?.id, isOpen]);
 
   if (!isOpen || !liveTest) return null;
 
@@ -62,35 +61,30 @@ export function ShareTestModal({ test: initialTest, isOpen, onClose }: ShareTest
   };
 
   const handleVisibilityChange = async (newVisibility: 'public' | 'private') => {
-    // 1. Instant local optimistic update
     setCurrentVisibility(newVisibility);
     setIsUpdating(true);
 
-    if (initialTest) {
-      initialTest.visibility = newVisibility;
-      initialTest.isPublic = newVisibility === 'public';
+    const updatedTest: Test = {
+      ...test,
+      visibility: newVisibility,
+      isPublic: newVisibility === 'public'
+    };
+
+    updateTest(updatedTest);
+
+    if (isDriveConnected) {
+      try {
+        await saveDriveTest(updatedTest);
+      } catch (e) {
+        console.error('Error saving visibility to Drive:', e);
+      }
     }
 
-    try {
-      await updateTestSharingInFirestore(
-        user?.uid || null,
-        test.id,
-        newVisibility,
-        newVisibility === 'public',
-        {
-          ownerName: user?.displayName || 'User',
-          ownerEmail: user?.email || ''
-        }
-      );
-      setFeedback(newVisibility === 'public' ? 'Test is now Public (Anyone with link)' : 'Test is now Restricted (Private)');
-      setTimeout(() => {
-        setFeedback(null);
-      }, 3000);
-    } catch (e) {
-      console.error('Error changing visibility:', e);
-    } finally {
-      setIsUpdating(false);
-    }
+    setFeedback(newVisibility === 'public' ? 'Test is now Public (Anyone with link)' : 'Test is now Restricted (Private)');
+    setTimeout(() => {
+      setFeedback(null);
+    }, 3000);
+    setIsUpdating(false);
   };
 
   return createPortal(
@@ -269,7 +263,7 @@ export function ShareTestModal({ test: initialTest, isOpen, onClose }: ShareTest
           <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
               <Shield className="w-3.5 h-3.5 text-blue-600" />
-              <span>Synced with Firebase</span>
+              <span>Synced with Google Drive</span>
             </div>
             <button
               type="button"
