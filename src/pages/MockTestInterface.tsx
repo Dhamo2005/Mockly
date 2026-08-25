@@ -17,9 +17,10 @@ import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import { useAuth } from '../contexts/AuthContext';
 import { useGoogleDrive } from '../contexts/GoogleDriveContext';
+import { MediaViewer } from '../components/MediaViewer';
 
 export default function MockTestInterface() {
-  const { user } = useAuth();
+  const { user, signInWithGoogle } = useAuth();
   const { testId } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -30,7 +31,7 @@ export default function MockTestInterface() {
     isConnecting: isDriveConnecting, 
     liveSyncStatus, 
     liveSyncLastSaved,
-    connect: connectDrive, 
+    connect, 
     syncLiveSession, 
     loadLiveSession, 
     deleteLiveSession, 
@@ -56,9 +57,18 @@ export default function MockTestInterface() {
   const canSwitchSections = !isStrictSectional || allowSectionSwitching;
 
   // Scheduled Test Detection
+  const derivedTimeLimit = useMemo(() => {
+    if (test && test.timeLimit && test.timeLimit > 0) return test.timeLimit;
+    if (test?.sections && test.sections.length > 0) {
+      const sum = test.sections.reduce((acc: number, sec: any) => acc + (sec.timeLimit || 0), 0);
+      if (sum > 0) return sum;
+    }
+    return 3600; // default 1 hour
+  }, [test]);
+
   const isScheduledTest = test?.settings?.isScheduled === true && !!test?.settings?.scheduledStartTime;
   const scheduledStartTime = test?.settings?.scheduledStartTime || 0;
-  const scheduledEndTime = test?.settings?.scheduledEndTime || (scheduledStartTime + (test?.timeLimit || 3600) * 1000);
+  const scheduledEndTime = test?.settings?.scheduledEndTime || (scheduledStartTime + derivedTimeLimit * 1000);
 
   // Live real-time clock for scheduled countdown
   const [currentTime, setCurrentTime] = useState(Date.now());
@@ -87,7 +97,7 @@ export default function MockTestInterface() {
   const [sectionTimeLeft, setSectionTimeLeft] = useState<Record<number, number>>({});
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [statuses, setStatuses] = useState<Record<string, QuestionStatus>>({});
-  const [timeLeft, setTimeLeft] = useState(test?.timeLimit || 0);
+  const [timeLeft, setTimeLeft] = useState(derivedTimeLimit || 0);
   const [timeSpent, setTimeSpent] = useState<Record<string, number>>({});
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
@@ -214,7 +224,7 @@ export default function MockTestInterface() {
 
   // Helper to persist current active test session cleanly
   const syncSession = (overrides?: any) => {
-    if (!testId || !test || isSubmitted) return;
+    if (!testId || !test || isSubmitted || isSubmittedRef.current) return;
     const now = Date.now();
     const sessionData = {
       testId,
@@ -307,37 +317,39 @@ export default function MockTestInterface() {
         const secDef = Array.isArray(test.sections) ? test.sections.find((s: any) => (typeof s === 'object' ? s.name === secName : s === secName)) : undefined;
         sectionDurations[idx] = (secDef && typeof secDef === 'object' && secDef.timeLimit) 
           ? secDef.timeLimit 
-          : Math.floor(test.timeLimit / Math.max(1, extractedSections.length));
+          : Math.floor(derivedTimeLimit / Math.max(1, extractedSections.length));
       });
       sectionDurationsRef.current = sectionDurations;
 
       const now = Date.now();
 
       let sTime = now;
-      let eTime = now + (test.timeLimit * 1000);
-      let calculatedTimeLeft = test.timeLimit;
+      let eTime = now + (derivedTimeLimit * 1000);
+      let calculatedTimeLeft = derivedTimeLimit;
 
       if (isScheduledTest) {
         sTime = scheduledStartTime;
         eTime = scheduledEndTime;
         calculatedTimeLeft = Math.max(0, Math.ceil((eTime - now) / 1000));
       } else if (activeSession) {
-        const elapsedSinceLastUpdate = activeSession.isPaused 
+        // Practice tests (non-scheduled) always auto-pause when closed.
+        const isEffectivelyPaused = activeSession.isPaused || !isScheduledTest;
+        const elapsedSinceLastUpdate = isEffectivelyPaused
           ? 0 
           : Math.max(0, Math.floor((now - (activeSession.lastUpdated || now)) / 1000));
 
-        if (activeSession.isPaused) {
-          calculatedTimeLeft = activeSession.timeLeft ?? test.timeLimit;
+        if (isEffectivelyPaused) {
+          calculatedTimeLeft = activeSession.timeLeft ?? derivedTimeLimit;
           eTime = now + (calculatedTimeLeft * 1000);
-          sTime = activeSession.startTime || (now - ((test.timeLimit - calculatedTimeLeft) * 1000));
+          sTime = activeSession.startTime || (now - ((derivedTimeLimit - calculatedTimeLeft) * 1000));
         } else if (activeSession.endTime && activeSession.endTime > now) {
           calculatedTimeLeft = Math.max(0, Math.ceil((activeSession.endTime - now) / 1000));
           eTime = activeSession.endTime;
-          sTime = activeSession.startTime || (eTime - (test.timeLimit * 1000));
+          sTime = activeSession.startTime || (eTime - (derivedTimeLimit * 1000));
         } else if (activeSession.timeLeft !== undefined) {
           calculatedTimeLeft = Math.max(0, activeSession.timeLeft - elapsedSinceLastUpdate);
           eTime = now + (calculatedTimeLeft * 1000);
-          sTime = activeSession.startTime || (now - ((test.timeLimit - calculatedTimeLeft) * 1000));
+          sTime = activeSession.startTime || (now - ((derivedTimeLimit - calculatedTimeLeft) * 1000));
         }
       }
 
@@ -388,13 +400,14 @@ export default function MockTestInterface() {
           }
         });
       } else if (activeSession?.sectionTimeLeft && Object.keys(activeSession.sectionTimeLeft).length > 0) {
-        const elapsedSinceLastUpdate = activeSession.isPaused 
+        const isEffectivelyPaused = activeSession.isPaused || !isScheduledTest;
+        const elapsedSinceLastUpdate = isEffectivelyPaused 
           ? 0 
           : Math.max(0, Math.floor((now - (activeSession.lastUpdated || now)) / 1000));
 
         extractedSections.forEach((_, idx) => {
           const prevSecTime = activeSession.sectionTimeLeft?.[idx] ?? sectionDurations[idx] ?? 900;
-          if (idx === (activeSession.currentSectionIndex ?? 0) && !activeSession.isPaused && isStrictSectional) {
+          if (idx === (activeSession.currentSectionIndex ?? 0) && !isEffectivelyPaused && isStrictSectional) {
             initialSectionTimes[idx] = Math.max(0, prevSecTime - elapsedSinceLastUpdate);
           } else {
             initialSectionTimes[idx] = prevSecTime;
@@ -465,7 +478,7 @@ export default function MockTestInterface() {
         currentSectionIndexRef.current = calculatedSectionIndex;
         setCurrentQuestionIndex(0);
         currentQuestionIndexRef.current = 0;
-        setIsPaused(false);
+        setIsPaused(false); isPausedRef.current = false;
         isPausedRef.current = false;
         actionLogsRef.current = [];
         questionTimestampsRef.current = {};
@@ -535,6 +548,19 @@ export default function MockTestInterface() {
     // Advance by whole seconds consumed, keeping fractional remainder
     lastTickTimestampRef.current = lastTick + (elapsedSeconds * 1000);
 
+    // Track time spent on current question accurately for ALL test types
+    const curQ = test?.questions[currentQuestionIndexRef.current];
+    if (curQ) {
+      setTimeSpent(prev => {
+        const updated = {
+          ...prev,
+          [curQ.id]: (prev[curQ.id] || 0) + elapsedSeconds
+        };
+        timeSpentRef.current = updated;
+        return updated;
+      });
+    }
+
     if (isScheduledTest) {
       const endTime = sessionEndTimeRef.current || scheduledEndTime;
       if (now >= endTime) {
@@ -581,20 +607,7 @@ export default function MockTestInterface() {
       setTimeLeft(nextTotalLeft);
       timeLeftRef.current = nextTotalLeft;
 
-      // Track time spent on current question accurately
-      const curQ = test?.questions[currentQuestionIndexRef.current];
-      if (curQ) {
-        setTimeSpent(prev => {
-          const updated = {
-            ...prev,
-            [curQ.id]: (prev[curQ.id] || 0) + elapsedSeconds
-          };
-          timeSpentRef.current = updated;
-          return updated;
-        });
-      }
-
-      if (nextTotalLeft <= 0) {
+      if (nextTotalLeft <= 0 && derivedTimeLimit > 0) {
         handleSubmitRef.current?.();
         return;
       }
@@ -705,7 +718,7 @@ export default function MockTestInterface() {
       window.removeEventListener('focus', handleWindowFocus);
       window.removeEventListener('blur', handleWindowBlur);
       window.removeEventListener('beforeunload', handleBeforeUnload);
-      if (isLoadedRef.current && !isSubmitted) {
+      if (isLoadedRef.current && !isSubmitted && !isSubmittedRef.current) {
         processTimerTick();
         syncSession();
       }
@@ -737,7 +750,7 @@ export default function MockTestInterface() {
       const secDef = Array.isArray(test.sections) ? test.sections.find((s: any) => (typeof s === 'object' ? s.name === secName : s === secName)) : undefined;
       freshSectionTimes[idx] = (secDef && typeof secDef === 'object' && secDef.timeLimit) 
         ? secDef.timeLimit 
-        : Math.floor(test.timeLimit / Math.max(1, extractedSections.length));
+        : Math.floor(derivedTimeLimit / Math.max(1, extractedSections.length));
     });
 
     const initialStatuses: Record<string, QuestionStatus> = {};
@@ -746,8 +759,8 @@ export default function MockTestInterface() {
     });
 
     lastTickTimestampRef.current = Date.now();
-    setTimeLeft(test.timeLimit);
-    timeLeftRef.current = test.timeLimit;
+    setTimeLeft(derivedTimeLimit);
+    timeLeftRef.current = derivedTimeLimit;
     setSectionTimeLeft(freshSectionTimes);
     sectionTimeLeftRef.current = freshSectionTimes;
     setAnswers({});
@@ -760,7 +773,7 @@ export default function MockTestInterface() {
     currentQuestionIndexRef.current = 0;
     setCurrentSectionIndex(0);
     currentSectionIndexRef.current = 0;
-    setIsPaused(false);
+    setIsPaused(false); isPausedRef.current = false;
     isPausedRef.current = false;
     setShowConfirm(null);
 
@@ -1005,8 +1018,9 @@ export default function MockTestInterface() {
   const negativeMarks = test?.negativeMarks ?? (test?.examCategory === 'SSC CGL' ? 0.5 : 0.25);
 
   const handleSubmit = () => {
-    if (isSubmitted) return;
+    if (isSubmitted || isSubmittedRef.current) return;
     setIsSubmitted(true);
+    isSubmittedRef.current = true;
     let correct = 0;
     let incorrect = 0;
     
@@ -1026,7 +1040,7 @@ export default function MockTestInterface() {
     const penalty = incorrect * negativeMarks;
     const netScore = Number((grossScore - penalty).toFixed(2));
     
-    const startTime = sessionStartTimeRef.current || (Date.now() - ((test.timeLimit - timeLeft) * 1000));
+    const startTime = sessionStartTimeRef.current || (Date.now() - ((derivedTimeLimit - timeLeft) * 1000));
     const endTime = Math.min(Date.now(), sessionEndTimeRef.current || Date.now());
 
     recordAction('test_submit', {
@@ -1157,14 +1171,14 @@ export default function MockTestInterface() {
         <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950 p-6">
           <div className="flex flex-col items-center gap-3">
             <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-            <p className="text-sm font-medium text-slate-600 dark:text-slate-400">Loading test session...</p>
+            <p className="text-sm font-medium text-slate-600 dark:text-slate-400">Resuming Test...</p>
           </div>
         </div>
       );
     }
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950 p-6">
-        <div className="max-w-md w-full text-center bg-white dark:bg-slate-900 rounded-3xl p-8 border border-slate-200 dark:border-slate-800 shadow-xl">
+        <div className="max-w-md w-full text-center bg-white dark:bg-slate-900 rounded-3xl p-8 border border-slate-100/80 dark:border-slate-800 shadow-xl">
           <AlertCircle className="w-12 h-12 text-slate-400 mx-auto mb-3" />
           <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Test Not Found</h2>
           <p className="text-xs text-slate-500 mt-2">The test link may be invalid or was deleted by the creator.</p>
@@ -1185,7 +1199,7 @@ export default function MockTestInterface() {
   if (isAccessDenied) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950 p-6 font-sans">
-        <div className="max-w-md w-full text-center bg-white dark:bg-slate-900 rounded-3xl p-8 border border-slate-200 dark:border-slate-800 shadow-2xl">
+        <div className="max-w-md w-full text-center bg-white dark:bg-slate-900 rounded-3xl p-8 border border-slate-100/80 dark:border-slate-800 shadow-[0_8px_32px_rgba(0,0,0,0.08)]">
           <div className="w-16 h-16 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 rounded-2xl flex items-center justify-center text-amber-600 mx-auto mb-4">
             <Lock className="w-8 h-8" />
           </div>
@@ -1277,7 +1291,7 @@ export default function MockTestInterface() {
             {test.title}
           </h1>
           <p className="text-sm sm:text-base text-slate-400 mt-2 max-w-lg">
-            {test.examCategory || 'Scheduled Mock Test'} • {test.questions.length} Questions • {Math.floor(test.timeLimit / 60)} Minutes
+            {test.examCategory || 'Scheduled Mock Test'} • {test.questions.length} Questions • {Math.floor(derivedTimeLimit / 60)} Minutes
           </p>
 
           {/* Countdown Blocks */}
@@ -1358,7 +1372,7 @@ export default function MockTestInterface() {
     <div className="flex h-[100dvh] flex-col bg-white font-sans text-slate-800 overflow-hidden select-none" id="mock-test-root">
       {isPaused && (
         <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-md flex flex-col items-center justify-center p-4 text-center">
-           <div className="bg-white p-6 sm:p-8 rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 flex flex-col items-center text-center">
+           <div className="bg-white p-6 sm:p-8 rounded-2xl max-w-md w-full shadow-[0_8px_32px_rgba(0,0,0,0.08)] border border-slate-100/80 flex flex-col items-center text-center">
              <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center mb-4">
                <Clock className="w-7 h-7" />
              </div>
@@ -1369,7 +1383,7 @@ export default function MockTestInterface() {
              <div className="w-full flex flex-col gap-2.5">
                <button 
                  onClick={() => { 
-                   setIsPaused(false); 
+                   setIsPaused(false); isPausedRef.current = false; 
                    recordAction('resume');
                    syncSession({ isPaused: false }); 
                  }}
@@ -1378,13 +1392,18 @@ export default function MockTestInterface() {
                  <Play className="w-4 h-4 fill-white" /> Resume Test
                </button>
                <button 
-                 onClick={() => { setIsPaused(false); setShowConfirm('submit'); }}
+                 onClick={() => { setIsPaused(false); isPausedRef.current = false; setShowConfirm('submit'); }}
                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm transition-colors flex items-center justify-center gap-2"
                >
                  <CheckCircle2 className="w-4 h-4" /> End Test & View Results
                </button>
                <button 
-                 onClick={() => { syncSession({ isPaused: true }); navigate(`/test-details/${test.id}`); }}
+                 onClick={() => { 
+                   setIsPaused(true);
+                   isPausedRef.current = true;
+                   syncSession({ isPaused: true }); 
+                   navigate(`/test-details/${test.id}`); 
+                 }}
                  className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold text-sm transition-colors flex items-center justify-center gap-2"
                >
                  <LogOut className="w-4 h-4" /> Save & Exit (Resume Later)
@@ -1402,7 +1421,7 @@ export default function MockTestInterface() {
       
       {showConfirm === 'restart' && (
         <div className="absolute inset-0 z-50 bg-black/50 backdrop-blur-sm flex flex-col items-center justify-center p-4">
-          <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl border border-slate-200">
+          <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-[0_8px_32px_rgba(0,0,0,0.08)] border border-slate-100/80">
             <h3 className="text-base font-bold text-slate-800 mb-2 flex items-center gap-2 text-red-600">
               <RotateCcw className="w-5 h-5" /> Restart Test?
             </h3>
@@ -1419,7 +1438,7 @@ export default function MockTestInterface() {
 
       {showConfirm === 'exit' && (
         <div className="absolute inset-0 z-50 bg-black/50 backdrop-blur-sm flex flex-col items-center justify-center p-4">
-          <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl border border-slate-200">
+          <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-[0_8px_32px_rgba(0,0,0,0.08)] border border-slate-100/80">
             <h3 className="text-base font-bold text-slate-800 mb-2 flex items-center gap-2">
               <LogOut className="w-5 h-5 text-amber-500" /> Leave or End Test?
             </h3>
@@ -1434,11 +1453,13 @@ export default function MockTestInterface() {
                 }}
                 className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-sm transition-colors flex items-center justify-center gap-2"
               >
-                <CheckCircle2 className="w-4 h-4" /> End Test & View Results Now
+                <CheckCircle2 className="w-4 h-4" /> End Test & Submit
               </button>
               <button 
                 onClick={() => {
                   setShowConfirm(null);
+                  setIsPaused(true);
+                  isPausedRef.current = true;
                   syncSession({ isPaused: true });
                   navigate(`/test-details/${test.id}`);
                 }}
@@ -1459,7 +1480,7 @@ export default function MockTestInterface() {
 
       {showConfirm === 'submit' && (
         <div className="absolute inset-0 z-50 bg-black/50 backdrop-blur-sm flex flex-col items-center justify-center p-4">
-          <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl border border-slate-200">
+          <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-[0_8px_32px_rgba(0,0,0,0.08)] border border-slate-100/80">
             <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-3">
               <CheckCircle2 className="w-6 h-6" />
             </div>
@@ -1481,7 +1502,7 @@ export default function MockTestInterface() {
                 <div className="text-2xl font-black text-purple-600">{counts.marked}</div>
                 <div className="text-[11px] font-bold text-purple-700 uppercase tracking-wider">Marked</div>
               </div>
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
+              <div className="bg-slate-50 border border-slate-100/80 rounded-xl p-3 text-center">
                 <div className="text-2xl font-black text-slate-600">{counts.unvisited}</div>
                 <div className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Not Visited</div>
               </div>
@@ -1498,7 +1519,7 @@ export default function MockTestInterface() {
                 onClick={() => { setShowConfirm(null); handleSubmit(); }} 
                 className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-sm transition-colors flex items-center justify-center gap-1.5 shadow-sm"
               >
-                <CheckCircle2 className="w-4 h-4" /> Submit & View Results
+                <CheckCircle2 className="w-4 h-4" /> Submit Test
               </button>
             </div>
           </div>
@@ -1507,7 +1528,7 @@ export default function MockTestInterface() {
 
       {showReportModal && (
         <div className="absolute inset-0 z-50 bg-black/50 backdrop-blur-sm flex flex-col items-center justify-center p-4">
-          <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl border border-slate-200">
+          <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-[0_8px_32px_rgba(0,0,0,0.08)] border border-slate-100/80">
             <h3 className="text-base font-bold text-slate-800 mb-4 flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-amber-500" /> Report Issue
             </h3>
@@ -1551,7 +1572,7 @@ export default function MockTestInterface() {
       )}
 
       {/* Top Header */}
-      <header className="h-12 border-b border-slate-200 bg-white px-3 sm:px-4 flex items-center justify-between shrink-0 z-20">
+      <header className="h-12 border-b border-slate-100/80 bg-white px-3 sm:px-4 flex items-center justify-between shrink-0 z-20">
         <div className="flex items-center gap-3 w-1/3">
           <span className="font-bold text-sm text-slate-800 truncate hidden sm:inline">{test.examCategory || "SSC CGL"}</span>
           <div className="hidden sm:block w-px h-4 bg-slate-300" />
@@ -1590,7 +1611,7 @@ export default function MockTestInterface() {
             </div>
           ) : (
             <button 
-              onClick={connectDrive} 
+              onClick={signInWithGoogle} 
               disabled={isDriveConnecting}
               className="flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded transition-colors shadow-2xs" 
               title="Connect Google Drive to auto-save every action and choice directly to your Google Drive"
@@ -1614,13 +1635,14 @@ export default function MockTestInterface() {
             <span className="hidden sm:inline">End Test</span>
           </button>
 
-          <div className="flex items-center gap-1 border-l border-slate-200 pl-2">
+          <div className="flex items-center gap-1 border-l border-slate-100/80 pl-2">
             <button title="Full Screen" onClick={handleToggleFullscreen} className="p-1.5 hover:bg-slate-100 rounded text-slate-600 hidden sm:block"><Maximize size={16}/></button>
             <button 
               title={isPaused ? "Resume" : "Pause"} 
               onClick={() => { 
                 const n = !isPaused; 
                 setIsPaused(n); 
+                isPausedRef.current = n;
                 recordAction(n ? 'pause' : 'resume');
                 syncSession({ isPaused: n }); 
               }} 
@@ -1635,7 +1657,7 @@ export default function MockTestInterface() {
       </header>
 
       {/* Sections Bar */}
-      <div className="flex items-center justify-between bg-white border-b border-slate-200 shrink-0 h-10 px-1 overflow-x-auto z-10 scrollbar-hide">
+      <div className="flex items-center justify-between bg-white border-b border-slate-100/80 shrink-0 h-10 px-1 overflow-x-auto z-10 scrollbar-hide">
         <div className="flex items-center h-full min-w-max px-1">
            {sections.map((sec, idx) => {
              const isCurrent = idx === currentSectionIndex;
@@ -1713,6 +1735,7 @@ export default function MockTestInterface() {
             {/* Question Text */}
             <div className="text-base sm:text-[17px] text-slate-800 mb-6 leading-relaxed flex-1 select-text">
               <div className="markdown-body"><Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{qText || ''}</Markdown></div>
+              <MediaViewer media={currentQuestion?.media} />
             </div>
             
             {/* Options */}
@@ -1727,7 +1750,7 @@ export default function MockTestInterface() {
                     key={option.id} 
                     className={cn(
                       "flex items-start p-3 rounded-xl border-2 cursor-pointer transition-all",
-                      isSelected ? "bg-blue-50/50 border-blue-600 shadow-xs" : "bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                      isSelected ? "bg-blue-50/50 border-blue-600 shadow-xs" : "bg-white border-slate-100/80 hover:border-slate-300 hover:bg-slate-50"
                     )}
                   >
                     <div className="flex items-center h-6 mt-0.5 mr-3">
@@ -1741,8 +1764,9 @@ export default function MockTestInterface() {
                     </div>
                     <span className="text-sm sm:text-base text-slate-800 flex-1 pt-[1px] select-text">
                       <div className="markdown-body"><Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{optText || ''}</Markdown></div>
+                      <MediaViewer media={option.media} />
                     </span>
-                    <span className="hidden sm:flex text-[10px] font-bold text-slate-400 border border-slate-200 rounded px-1.5 py-0.5 ml-2 mt-0.5 bg-white">
+                    <span className="hidden sm:flex text-[10px] font-bold text-slate-400 border border-slate-100/80 rounded px-1.5 py-0.5 ml-2 mt-0.5 bg-white">
                       {char}
                     </span>
                   </label>
@@ -1752,7 +1776,7 @@ export default function MockTestInterface() {
           </div>
 
           {/* Bottom Action Bar */}
-          <footer className="h-14 sm:h-16 flex items-center justify-between px-2 sm:px-4 bg-white border-t border-slate-200 shrink-0 gap-2">
+          <footer className="h-14 sm:h-16 flex items-center justify-between px-2 sm:px-4 bg-white border-t border-slate-100/80 shrink-0 gap-2">
             <div className="flex gap-2">
               <button 
                 onClick={handleMarkReview}
@@ -1815,13 +1839,13 @@ export default function MockTestInterface() {
         )}
         
         <aside className={cn(
-          "fixed inset-y-0 right-0 z-50 w-[280px] bg-slate-50 border-l border-slate-200 flex flex-col shrink-0 lg:static lg:flex transition-transform duration-300 ease-in-out",
+          "fixed inset-y-0 right-0 z-50 w-[280px] bg-slate-50 border-l border-slate-100/80 flex flex-col shrink-0 lg:static lg:flex transition-transform duration-300 ease-in-out",
           showPalette ? "translate-x-0" : "translate-x-full lg:translate-x-0"
         )}>
           {/* Candidate Box */}
-          <div className="p-3 bg-white border-b border-slate-200 flex items-center justify-between">
+          <div className="p-3 bg-white border-b border-slate-100/80 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <img src={user?.photoURL || `https://ui-avatars.com/api/?name=${user?.displayName || 'C'}&background=f1f5f9&color=334155`} alt="User" className="w-9 h-9 rounded border border-slate-200" />
+              <img src={user?.photoURL || `https://ui-avatars.com/api/?name=${user?.displayName || 'C'}&background=f1f5f9&color=334155`} alt="User" className="w-9 h-9 rounded border border-slate-100/80" />
               <div className="font-bold text-sm text-slate-800 truncate w-36">{user?.displayName || 'Candidate'}</div>
             </div>
             <button className="lg:hidden p-1.5 text-slate-500 hover:bg-slate-100 rounded" onClick={() => setShowPalette(false)}>
@@ -1830,7 +1854,7 @@ export default function MockTestInterface() {
           </div>
           
           {/* Status Legends (Compact) */}
-          <div className="p-2 border-b border-slate-200 bg-white grid grid-cols-4 gap-1 text-center">
+          <div className="p-2 border-b border-slate-100/80 bg-white grid grid-cols-4 gap-1 text-center">
             <div className="flex flex-col items-center p-1" title="Answered">
               <div className="w-5 h-5 flex items-center justify-center text-white text-[10px] font-bold bg-[#25b55d] rounded-t-full rounded-b-sm mb-1">{counts.answered}</div>
               <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tighter">Ans</span>
@@ -1894,7 +1918,7 @@ export default function MockTestInterface() {
           </div>
 
           {/* Bottom Submit Action inside Palette */}
-          <div className="p-3 bg-white border-t border-slate-200 shrink-0">
+          <div className="p-3 bg-white border-t border-slate-100/80 shrink-0">
             <button
               onClick={() => setShowConfirm('submit')}
               className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs sm:text-sm transition-colors flex items-center justify-center gap-2 shadow-sm"

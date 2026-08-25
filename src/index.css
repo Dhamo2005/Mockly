@@ -22,29 +22,11 @@
 :root, body {
   margin: 0;
   padding: 0;
-  width: 100vw;
-  height: 100dvh;
-  overflow: hidden; /* Lock viewport completely as per strict M3 layout specs */
+  min-height: 100%;
   background-color: var(--color-surface);
   color: var(--color-on-surface);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-.google-app-view-container {
-  contain: strict;
-  content-visibility: auto;
-  contain-intrinsic-size: 0 800px; /* Placeholder sizing for virtualized lists */
-}
-
-.google-main-stage {
-  overflow-y: auto;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  background-color: var(--color-surface-container);
-  contain: strict; 
-  content-visibility: auto;
-  contain-intrinsic-size: 0 800px;
 }
 
 .custom-scrollbar::-webkit-scrollbar {

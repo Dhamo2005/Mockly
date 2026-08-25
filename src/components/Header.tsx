@@ -127,39 +127,39 @@ export const Header = () => {
   }, []);
 
   return (
-    <header className="bg-white h-16 flex items-center justify-between px-4 sm:px-6 shrink-0 z-20 border-b border-slate-200 relative">
-      <div className="flex items-center gap-3 sm:gap-6 flex-1 min-w-0">
-        <Link to="/" className="flex items-center gap-2 hover:opacity-90 transition-opacity outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded shrink-0" aria-label="Go to Dashboard">
-          <div className="bg-blue-600 p-2 rounded-lg shadow-sm text-white flex items-center justify-center">
-            <BookOpen className="h-5 w-5" />
+    <header className="bg-white/80 backdrop-blur-md h-[60px] flex items-center justify-between px-4 sm:px-5 shrink-0 z-20 border-b border-slate-100/80 sticky top-0">
+      <div className="flex items-center gap-3 flex-1 min-w-0">
+        <Link to="/" className="flex items-center gap-2.5 hover:opacity-90 transition-opacity outline-none rounded shrink-0" aria-label="Go to Dashboard">
+          <div className="bg-blue-600 w-8 h-8 rounded-xl shadow-sm text-white flex items-center justify-center">
+            <BookOpen className="h-4 w-4" />
           </div>
-          <h1 className="text-xl font-black text-slate-800 tracking-tight hidden sm:block">Mockly</h1>
+          <h1 className="text-xl font-bold text-slate-800 tracking-tight hidden sm:block">Mockly</h1>
         </Link>
-        <div className="flex-1 min-w-0 max-w-md mx-2 sm:mx-4">
+        <div className="flex-1 min-w-0 max-w-sm mx-2 sm:mx-4">
           <GlobalSearch />
         </div>
       </div>
 
-      {/* Centered Active Test Button - Only shown when a genuine active test exists and not on test page */}
+      {/* Centered Active Test Button */}
       {activeTest && !isTestPage && (
         <div className="absolute left-1/2 -translate-x-1/2 flex items-center z-30">
-          <div className="flex items-center bg-amber-50 hover:bg-amber-100/90 text-amber-800 border border-amber-300/80 rounded-full shadow-sm text-xs sm:text-sm font-semibold transition-all">
+          <div className="flex items-center bg-amber-50/80 hover:bg-amber-100/80 text-amber-700 border border-amber-200/50 rounded-full shadow-[0_2px_8px_rgba(245,158,11,0.08)] text-[13px] font-semibold transition-all">
             <button
               onClick={() => navigate(`/test/${activeTest.id}`)}
-              className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 rounded-l-full cursor-pointer"
+              className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-1.5 focus:outline-none rounded-l-full cursor-pointer"
               title={`Resume ${activeTest.title}`}
             >
-              <span className="relative flex h-2 sm:h-2.5 w-2 sm:w-2.5">
+              <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-500 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 sm:h-2.5 w-2 sm:w-2.5 bg-amber-500"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
               </span>
-              <span className="hidden sm:inline">Resume: {activeTest.title.length > 22 ? activeTest.title.substring(0, 22) + '...' : activeTest.title}</span>
-              <span className="inline sm:hidden">Active Test</span>
-              <PlayCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-600 ml-0.5" />
+              <span className="hidden sm:inline">Resume: {activeTest.title.length > 20 ? activeTest.title.substring(0, 20) + '...' : activeTest.title}</span>
+              <span className="inline sm:hidden">Active</span>
+              <PlayCircle className="w-3.5 h-3.5 text-amber-600 ml-0.5" />
             </button>
             <button
               onClick={(e) => handleDiscardActiveTest(e, activeTest.id)}
-              className="p-1.5 pr-2.5 hover:text-red-600 transition-colors text-amber-600/70 focus:outline-none cursor-pointer"
+              className="p-1.5 pr-2 hover:text-red-500 transition-colors text-amber-600/60 focus:outline-none cursor-pointer"
               title="Discard active session"
               aria-label="Discard active test session"
             >
@@ -169,36 +169,36 @@ export const Header = () => {
         </div>
       )}
 
-      <div className="flex items-center gap-2 sm:gap-3">
+      <div className="flex items-center gap-1.5 sm:gap-2">
         {headerContent}
         
         {user ? (
           <div className="relative" ref={dropdownRef}>
             <button 
               onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-              className="flex items-center focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-full transition-all border-2 border-transparent hover:border-blue-100"
+              className="flex items-center focus:outline-none rounded-full transition-all border-2 border-transparent hover:border-slate-100"
               aria-label="Toggle user menu"
               aria-expanded={isDropdownOpen}
             >
               <img 
                 src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName || 'User'}&background=random`} 
                 alt={`${user.displayName || 'User'}'s profile`} 
-                className="w-9 h-9 rounded-full object-cover shadow-sm border border-slate-200"
+                className="w-8 h-8 rounded-full object-cover shadow-sm border border-slate-100/80"
               />
             </button>
             
             <AnimatePresence>
               {isDropdownOpen && (
                 <motion.div 
-                  initial={{ opacity: 0, y: 5 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 5 }}
-                  transition={{ duration: 0.1 }}
-                  className="absolute right-0 mt-2 w-52 bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden z-50 py-1 origin-top-right"
+                  initial={{ opacity: 0, y: 5, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 5, scale: 0.98 }}
+                  transition={{ duration: 0.15, ease: "easeOut" }}
+                  className="absolute right-0 mt-2 w-52 bg-white/95 backdrop-blur-md border border-slate-100/80 rounded-[14px] shadow-[0_4px_24px_rgba(0,0,0,0.06)] overflow-hidden z-50 py-1 origin-top-right"
                 >
-                  <div className="px-4 py-2 border-b border-slate-100 mb-1 bg-slate-50">
-                    <p className="text-[11px] font-bold text-slate-800 truncate">{user.displayName}</p>
-                    <p className="text-[10px] text-slate-400 truncate">{user.email}</p>
+                  <div className="px-4 py-2.5 border-b border-slate-100/60 mb-1">
+                    <p className="text-[13px] font-semibold text-slate-800 truncate">{user.displayName}</p>
+                    <p className="text-[11px] text-slate-500 truncate">{user.email}</p>
                   </div>
                   
                   <button
@@ -206,29 +206,30 @@ export const Header = () => {
                       setIsDropdownOpen(false);
                       navigate('/settings');
                     }}
-                    className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 hover:text-blue-700 transition-colors w-full text-left"
+                    className="flex items-center gap-2 px-4 py-2 text-[13px] font-medium text-slate-600 hover:bg-slate-50 hover:text-blue-600 transition-colors w-full text-left"
                   >
-                    <HardDrive className="w-3.5 h-3.5 text-indigo-500" />
+                    <HardDrive className="w-3.5 h-3.5" />
                     Google Drive Storage
                   </button>
-
                   <button
                     onClick={() => {
                       setIsDropdownOpen(false);
                       navigate('/settings');
                     }}
-                    className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 hover:text-blue-700 transition-colors w-full text-left"
+                    className="flex items-center gap-2 px-4 py-2 text-[13px] font-medium text-slate-600 hover:bg-slate-50 hover:text-blue-600 transition-colors w-full text-left"
                   >
                     <Settings className="w-3.5 h-3.5" />
                     Settings
                   </button>
+                  
+                  <div className="h-px bg-slate-100/60 my-1 mx-2" />
                   
                   <button 
                     onClick={() => {
                       signOut();
                       setIsDropdownOpen(false);
                     }}
-                    className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors w-full text-left"
+                    className="flex items-center gap-2 px-4 py-2 text-[13px] font-medium text-red-500 hover:bg-red-50 transition-colors w-full text-left"
                   >
                     <LogOut className="w-3.5 h-3.5" />
                     Logout
@@ -241,7 +242,7 @@ export const Header = () => {
           <button 
             onClick={signInWithGoogle}
             disabled={isSigningIn}
-            className="flex items-center justify-center bg-white border border-slate-200 shadow-xs rounded-md text-slate-700 font-bold text-[11px] h-8 px-3 hover:bg-slate-50 hover:border-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center justify-center bg-white border border-slate-200/80 shadow-[0_2px_8px_rgba(0,0,0,0.04)] rounded-[10px] text-slate-700 font-semibold text-[13px] h-[34px] px-3.5 hover:bg-slate-50 transition-all disabled:opacity-50"
             aria-label="Sign in with Google"
           >
             <div className="flex items-center gap-2">

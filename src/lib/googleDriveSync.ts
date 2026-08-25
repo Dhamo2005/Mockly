@@ -683,7 +683,7 @@ export async function listDriveFiles(parentFolderId?: string): Promise<DriveBack
   }
 
   const data = await res.json();
-  const files: DriveBackupFile[] = (data.files || []).map((f: any) => ({
+  const rawFiles = (data.files || []).map((f: any) => ({
     id: f.id,
     name: f.name,
     mimeType: f.mimeType,
@@ -694,7 +694,37 @@ export async function listDriveFiles(parentFolderId?: string): Promise<DriveBack
     isFolder: f.mimeType === 'application/vnd.google-apps.folder',
   }));
 
-  return files;
+  const validFiles: DriveBackupFile[] = [];
+  
+  for (const f of rawFiles) {
+    if (f.isFolder) {
+      try {
+        const childQuery = encodeURIComponent(`'${f.id}' in parents and trashed = false`);
+        const childRes = await fetch(
+          `https://www.googleapis.com/drive/v3/files?q=${childQuery}&fields=files(id)&pageSize=1`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (childRes.ok) {
+          const childData = await childRes.json();
+          if (childData.files && childData.files.length > 0) {
+            validFiles.push(f);
+          } else {
+            // Folder is empty, delete it from Google Drive
+            await deleteDriveFile(f.id);
+          }
+        } else {
+          validFiles.push(f);
+        }
+      } catch (err) {
+        console.warn('Error checking folder children:', err);
+        validFiles.push(f);
+      }
+    } else {
+      validFiles.push(f);
+    }
+  }
+
+  return validFiles;
 }
 
 /**

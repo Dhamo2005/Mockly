@@ -80,7 +80,7 @@ export const useStore = create<AppState>()(
       language: 'en',
       setLanguage: (lang) => set({ language: lang }),
 
-      tests: (initialTests && Array.isArray(initialTests) && initialTests.length > 0) ? initialTests : [],
+      tests: [],
       addTest: (test) => set((state) => ({ 
         tests: [...state.tests, { createdAt: test.createdAt || Date.now(), ...test }] 
       })),
@@ -134,16 +134,24 @@ export const useStore = create<AppState>()(
       }),
 
       attempts: [],
-      addAttempt: (attempt) => set((state) => ({ 
-        attempts: [
-          ...state.attempts, 
-          { 
-            startTime: attempt.startTime || Date.now(), 
-            endTime: attempt.endTime || Date.now(), 
-            ...attempt 
-          }
-        ] 
-      })),
+      addAttempt: (attempt) => set((state) => {
+        const exists = state.attempts.some(a => a.id === attempt.id);
+        if (exists) {
+          return {
+            attempts: state.attempts.map(a => a.id === attempt.id ? { ...a, ...attempt } : a)
+          };
+        }
+        return { 
+          attempts: [
+            ...state.attempts, 
+            { 
+              startTime: attempt.startTime || Date.now(), 
+              endTime: attempt.endTime || Date.now(), 
+              ...attempt 
+            }
+          ] 
+        };
+      }),
       updateAttempt: (attempt) => set((state) => ({
         attempts: state.attempts.map((a) => a.id === attempt.id ? { ...a, ...attempt } : a)
       })),
@@ -232,10 +240,39 @@ export const useStore = create<AppState>()(
         bookmarks: state.bookmarks,
         language: state.language,
       }),
-      onRehydrateStorage: () => () => {
+      onRehydrateStorage: () => (state) => {
         // storage rehydrated
       }
     }
   )
 );
 
+
+
+// Temporary cleanup for duplicate attempts on load
+
+// Run once on load to clean up any existing duplicates
+const cleanupDuplicates = () => {
+  const state = useStore.getState();
+  let updates: Partial<AppState> = {};
+  
+  if (state.attempts) {
+    const uniqueAttempts = new Map();
+    state.attempts.forEach(a => uniqueAttempts.set(a.id, a));
+    if (uniqueAttempts.size !== state.attempts.length) {
+      updates.attempts = Array.from(uniqueAttempts.values());
+    }
+  }
+  
+  if (state.tests) {
+    const uniqueTests = new Map();
+    state.tests.forEach(t => uniqueTests.set(t.id, t));
+    if (uniqueTests.size !== state.tests.length) {
+      updates.tests = Array.from(uniqueTests.values());
+    }
+  }
+  
+  if (Object.keys(updates).length > 0) {
+    useStore.setState(updates);
+  }
+};

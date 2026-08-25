@@ -10,20 +10,19 @@ import { Test, Question } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { ExamPersonalityModal } from '../components/ExamPersonalityModal';
 import { ShareTestModal } from '../components/ShareTestModal';
-import { GoogleDrivePickerModal } from '../components/GoogleDrivePickerModal';
 import { getTestDisplayDate } from '../lib/dateUtils';
 
 const sanitizeTestId = (id: string) => id.replace(/[/.#$[\]]/g, '_');
 
 export default function QuestionBank() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, signInWithGoogle } = useAuth();
   const { tests, importTests, clearTests, updateTest } = useStore();
   const {
     isConnected: isDriveConnected,
     isSyncing: isDriveSyncing,
     files: driveFiles,
-    connect: connectDrive,
+    connect,
     exportTest: exportTestToDrive,
     saveTest: saveDriveTest,
     deleteTest: deleteDriveTest,
@@ -38,7 +37,6 @@ export default function QuestionBank() {
   const [testToEditPersonality, setTestToEditPersonality] = useState<Test | null>(null);
   const [testToShare, setTestToShare] = useState<Test | null>(null);
   const [pendingImportTests, setPendingImportTests] = useState<any[] | null>(null);
-  const [showDrivePicker, setShowDrivePicker] = useState(false);
   const [exportingTestId, setExportingTestId] = useState<string | null>(null);
 
   const handleDriveExport = async (test: Test) => {
@@ -49,48 +47,7 @@ export default function QuestionBank() {
 
   
     const handleExportTest = (test: Test) => {
-    const exportData = [{
-      id: test.id,
-      title: test.title,
-      description: test.description,
-      timeLimit: test.timeLimit,
-      themeColor: test.themeColor || "#8b5cf6",
-      Sectionaltimer: (test.settings?.strictSectionalTiming && !test.settings?.allowSectionSwitching) ? "true" : "false",
-      examCategory: test.examCategory,
-      settings: test.settings,
-      scoring: test.scoring,
-      exam: test.exam,
-      positiveMarks: test.positiveMarks,
-      negativeMarks: test.negativeMarks,
-      sections: test.sections?.map((sec, index) => ({
-        title: sec.name,
-        timeLimit: sec.timeLimit,
-        id: sec.id || (index + 1)
-      })) || [],
-      questions: test.questions?.map((q, qIndex) => {
-        const secIndex = test.sections?.findIndex(s => s.name === q.section) ?? -1;
-        const secId = secIndex >= 0 ? (test.sections[secIndex].id || (secIndex + 1)) : 1;
-        return {
-          text: q.text,
-          options: q.options?.map(opt => ({
-            text: opt.text,
-            i: opt.id
-          })) || [],
-          questionNumber: qIndex + 1,
-          i: q.id,
-          a: q.correctOptionId,
-          sectionId: secId
-        };
-      }) || [],
-      testMode: {
-        isReducedTest: true,
-        questionsPerSection: test.sections && test.sections.length > 0 ? Math.floor(test.questions.length / test.sections.length) : test.questions?.length || 0,
-        totalQuestions: test.questions?.length || 0,
-        maximumMarks: (test.questions?.length || 0) * (test.positiveMarks || 2),
-        marksPerQuestion: test.positiveMarks || 2,
-        negativeMarksPerWrongAnswer: test.negativeMarks || 0.5
-      }
-    }];
+    const exportData = [test];
 
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData, null, 2));
     const downloadAnchorNode = document.createElement('a');
@@ -352,7 +309,7 @@ export default function QuestionBank() {
         )}
       </AnimatePresence>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Upload Card */}
         <motion.div 
           whileHover={{ y: -2 }}
@@ -394,64 +351,7 @@ export default function QuestionBank() {
           </div>
         </motion.div>
 
-        {/* Google Drive Card */}
-        <motion.div 
-          whileHover={{ y: -2 }}
-          className="bg-white p-6 rounded-2xl border border-slate-100 shadow-[0_4px_20px_rgba(0,0,0,0.02)] flex flex-col justify-between"
-        >
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center">
-                  <HardDrive className="h-5 w-5" />
-                </div>
-                <h3 className="text-lg font-bold text-slate-800">Google Drive</h3>
-              </div>
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                isDriveConnected 
-                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
-                  : 'bg-slate-100 text-slate-600 border-slate-200'
-              }`}>
-                {isDriveConnected ? 'Connected' : 'Not Connected'}
-              </span>
-            </div>
-            
-            <p className="text-slate-500 text-sm mb-4 leading-relaxed">
-              Store and import test files directly from your private <strong>Mockly App Data</strong> folder in Google Drive.
-            </p>
-          </div>
 
-          <div className="space-y-2 mt-auto">
-            {isDriveConnected ? (
-              <>
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between text-xs">
-                  <span className="text-slate-600 font-medium flex items-center gap-1.5">
-                    <Folder className="w-3.5 h-3.5 text-amber-500" />
-                    Drive Files
-                  </span>
-                  <span className="font-bold text-slate-800">{driveFiles.length} files available</span>
-                </div>
-                <motion.button 
-                  whileHover={{ scale: 1.01 }}
-                  whileTap={{ scale: 0.99 }}
-                  onClick={() => setShowDrivePicker(true)}
-                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-4 rounded-xl transition-colors flex items-center justify-center gap-2 text-xs shadow-sm"
-                >
-                  <Folder className="h-3.5 w-3.5" /> Browse &amp; Import from Drive
-                </motion.button>
-              </>
-            ) : (
-              <motion.button 
-                whileHover={{ scale: 1.01 }}
-                whileTap={{ scale: 0.99 }}
-                onClick={() => connectDrive()}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl transition-colors flex items-center justify-center gap-2 text-xs shadow-sm"
-              >
-                <HardDrive className="h-4 w-4" /> Connect Google Drive
-              </motion.button>
-            )}
-          </div>
-        </motion.div>
 
         {/* Format Guide */}
         <motion.div 
@@ -748,6 +648,16 @@ export default function QuestionBank() {
 
               importTests(finalizedTests);
 
+              if (isDriveConnected) {
+                try {
+                  for (const t of finalizedTests) {
+                    await saveDriveTest(t);
+                  }
+                } catch (err) {
+                  console.error('Failed to save imported tests directly to Drive folder:', err);
+                }
+              }
+
               setStatus({ type: 'success', message: `Successfully imported ${finalizedTests.length} test paper(s) & synced with Google Drive.` });
               setTimeout(() => setStatus({ type: null, message: '' }), 4000);
               setPendingImportTests(null);
@@ -762,6 +672,14 @@ export default function QuestionBank() {
                 settings: { ...testToEditPersonality.settings, ...(updatedFields.settings || {}) }
               };
               updateTest(updatedTest);
+              
+              if (isDriveConnected) {
+                try {
+                  await saveDriveTest(updatedTest);
+                } catch (err) {
+                  console.error('Failed to save updated test directly to Drive folder:', err);
+                }
+              }
             }
             setTestToEditPersonality(null);
           }}
@@ -778,10 +696,6 @@ export default function QuestionBank() {
       )}
 
       {/* Google Drive File Picker & Importer Modal */}
-      <GoogleDrivePickerModal
-        isOpen={showDrivePicker}
-        onClose={() => setShowDrivePicker(false)}
-      />
     </motion.div>
   );
 }

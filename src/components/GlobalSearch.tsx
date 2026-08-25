@@ -26,9 +26,9 @@ export const GlobalSearch = () => {
     const lowerQuery = query.toLowerCase();
     return tests.filter(
       (test) =>
-        test.title.toLowerCase().includes(lowerQuery) ||
-        (test.description && test.description.toLowerCase().includes(lowerQuery)) ||
-        (test.examCategory && test.examCategory.toLowerCase().includes(lowerQuery))
+        (typeof test.title === 'string' ? test.title.toLowerCase().includes(lowerQuery) : String(test.title || '').toLowerCase().includes(lowerQuery)) ||
+        (test.description && String(test.description).toLowerCase().includes(lowerQuery)) ||
+        (test.examCategory && String(test.examCategory).toLowerCase().includes(lowerQuery))
     ).slice(0, 5); // Limit to top 5 results
   }, [query, tests]);
 
@@ -47,7 +47,7 @@ export const GlobalSearch = () => {
           }}
           onFocus={() => setIsOpen(true)}
           placeholder="Search for tests..."
-          className="w-full h-10 sm:h-11 pl-10 sm:pl-12 pr-10 text-sm sm:text-[15px] bg-slate-100/80 border-none rounded-full focus:outline-none focus:bg-white focus:ring-1 focus:ring-slate-200 focus:shadow-sm transition-all placeholder:text-slate-500 text-slate-800 font-medium"
+          className="w-full h-9 sm:h-[38px] pl-10 sm:pl-11 pr-10 text-[14px] sm:text-[15px] bg-slate-100/80 border-none rounded-full focus:outline-none focus:bg-slate-100 transition-all placeholder:text-slate-500 text-slate-800 font-medium"
         />
         {query && (
           <button
@@ -72,13 +72,13 @@ export const GlobalSearch = () => {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 5 }}
               transition={{ duration: 0.15 }}
-              className="hidden md:block absolute top-full left-0 mt-2 w-80 md:w-96 bg-white rounded-xl shadow-xl border border-slate-200/80 overflow-hidden z-50 origin-top-left"
+              className="hidden md:block absolute top-full left-0 mt-2 w-80 md:w-96 bg-white/95 backdrop-blur-md rounded-[16px] shadow-[0_8px_32px_rgba(0,0,0,0.08)] border border-slate-100/80 overflow-hidden z-50 origin-top-left"
             >
-              <div className="p-2 border-b border-slate-100 bg-slate-50/50">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-2">Results</span>
+              <div className="p-2 border-b border-slate-100/60 bg-transparent">
+                <span className="text-[11px] font-semibold text-slate-400 px-2">Results</span>
               </div>
               
-              <div className="max-h-[300px] overflow-y-auto custom-scrollbar p-1.5">
+              <div className="max-h-[300px] overflow-y-auto custom-scrollbar p-2">
                 {filteredTests.length > 0 ? (
                   filteredTests.map((test) => (
                     <button
@@ -94,10 +94,10 @@ export const GlobalSearch = () => {
                         <CheckSquare className="w-4 h-4" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <h4 className="text-xs sm:text-[13px] font-semibold text-slate-800 truncate">{test.title}</h4>
+                        <h4 className="text-xs sm:text-[13px] font-semibold text-slate-800 truncate">{typeof test.title === 'string' ? test.title : String(test.title || 'Untitled Test')}</h4>
                         {test.examCategory && (
                           <span className="inline-block mt-1 px-2 py-0.5 bg-slate-100 text-slate-500 text-[10px] font-bold rounded-md">
-                            {test.examCategory}
+                            {typeof test.examCategory === 'string' ? test.examCategory : String(test.examCategory || '')}
                           </span>
                         )}
                       </div>
@@ -165,10 +165,10 @@ export const GlobalSearch = () => {
                         <CheckSquare className="w-5 h-5" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <h4 className="text-sm font-semibold text-slate-800 truncate">{test.title}</h4>
+                        <h4 className="text-sm font-semibold text-slate-800 truncate">{typeof test.title === 'string' ? test.title : String(test.title || 'Untitled Test')}</h4>
                         {test.examCategory && (
                           <span className="inline-block mt-1 px-2 py-0.5 bg-slate-100 text-slate-500 text-[10px] font-bold rounded-md">
-                            {test.examCategory}
+                            {typeof test.examCategory === 'string' ? test.examCategory : String(test.examCategory || '')}
                           </span>
                         )}
                       </div>

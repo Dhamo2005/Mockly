@@ -31,6 +31,7 @@ import {
 import { getTestDisplayDate } from '../lib/dateUtils';
 import { cn, getLocalizedText } from '../lib/utils';
 import { Language } from '../types';
+import { MediaViewer } from '../components/MediaViewer';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -39,7 +40,7 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 
-type CutoffCategory = 'General' | 'OBC' | 'EWS' | 'SC' | 'ST';
+
 
 export default function ReviewInterface() {
   const { attemptId } = useParams();
@@ -48,11 +49,6 @@ export default function ReviewInterface() {
   const { attempts, tests, language, setLanguage, deleteAttempt } = useStore();
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [userRating, setUserRating] = useState<number>(0);
-  const [hoverRating, setHoverRating] = useState<number>(0);
-  const [ratingSubmitted, setRatingSubmitted] = useState<boolean>(false);
-  const [selectedCategory, setSelectedCategory] = useState<CutoffCategory>('General');
-  const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
 
   // Find target attempt
   const currentAttempt = attempts.find(a => a.id === attemptId);
@@ -124,6 +120,16 @@ export default function ReviewInterface() {
     );
   }
 
+  // Add derivedTimeLimit to handle missing overall derivedTimeLimit when section times are provided
+  const derivedTimeLimit = useMemo(() => {
+    if (test && test.timeLimit && test.timeLimit > 0) return test.timeLimit;
+    if (test?.sections && test.sections.length > 0) {
+      const sum = test.sections.reduce((acc: number, sec: any) => acc + (sec.timeLimit || 0), 0);
+      if (sum > 0) return sum;
+    }
+    return 3600; // default 1 hour
+  }, [test]);
+
   // Marking Scheme Calculations
   const positiveMarks = test.positiveMarks ?? (test.examCategory === 'SSC CGL' ? 2.0 : 1.0);
   const negativeMarks = test.negativeMarks ?? (test.examCategory === 'SSC CGL' ? 0.5 : 0.25);
@@ -172,7 +178,7 @@ export default function ReviewInterface() {
           incorrect: 0,
           unanswered: 0,
           timeSpent: 0,
-          timeLimit: sec.timeLimit || Math.floor((test.timeLimit || 3600) / test.sections.length)
+          timeLimit: sec.timeLimit || Math.floor((derivedTimeLimit || 3600) / test.sections.length)
         });
       });
     }
@@ -187,7 +193,7 @@ export default function ReviewInterface() {
           incorrect: 0,
           unanswered: 0,
           timeSpent: 0,
-          timeLimit: Math.floor((test.timeLimit || 3600) / (sectionsMap.size + 1))
+          timeLimit: Math.floor((derivedTimeLimit || 3600) / (sectionsMap.size + 1))
         });
       }
 
@@ -215,33 +221,24 @@ export default function ReviewInterface() {
       const secAttempted = sec.correct + sec.incorrect;
       const secAccuracy = secAttempted > 0 ? Math.round((sec.correct / secAttempted) * 100) : 0;
 
-      // Dynamic Cutoff Estimation per category
-      let categoryMultiplier = 0.55;
-      if (selectedCategory === 'General') categoryMultiplier = 0.55;
-      if (selectedCategory === 'OBC') categoryMultiplier = 0.50;
-      if (selectedCategory === 'EWS') categoryMultiplier = 0.48;
-      if (selectedCategory === 'SC') categoryMultiplier = 0.42;
-      if (selectedCategory === 'ST') categoryMultiplier = 0.38;
-
-      const baseCutoff = Math.round(secMaxMarks * categoryMultiplier);
-      const cutoffLow = Math.max(1, baseCutoff - 1);
-      const cutoffHigh = Math.min(secMaxMarks, baseCutoff + 1);
-
-      return {
+              return {
         ...sec,
         score: secScore,
         maxMarks: secMaxMarks,
         attempted: secAttempted,
         accuracy: secAccuracy,
-        cutoffRange: `${cutoffLow} - ${cutoffHigh}`
+
       };
     });
-  }, [test, currentAttempt, positiveMarks, negativeMarks, selectedCategory]);
+  }, [test, currentAttempt, positiveMarks, negativeMarks, ]);
 
   // Total time spent across all questions
   const totalTimeSpentSeconds = useMemo(() => {
-    if (currentAttempt.timeSpent) {
-      return Object.values(currentAttempt.timeSpent).reduce((acc, t) => acc + (t || 0), 0);
+    if (currentAttempt.durationMs) {
+      return Math.floor(currentAttempt.durationMs / 1000);
+    }
+    if (currentAttempt.timeSpent && Object.keys(currentAttempt.timeSpent).length > 0) {
+      return Object.values(currentAttempt.timeSpent).reduce((acc, t) => acc + ((t as number) || 0), 0);
     }
     if (currentAttempt.startTime && currentAttempt.endTime) {
       return Math.floor((currentAttempt.endTime - currentAttempt.startTime) / 1000);
@@ -249,36 +246,14 @@ export default function ReviewInterface() {
     return 0;
   }, [currentAttempt]);
 
-  // Overall Total Cutoff based on sum of sectional cutoffs
-  const overallCutoffRange = useMemo(() => {
-    let multiplier = 0.65;
-    if (selectedCategory === 'General') multiplier = 0.68;
-    if (selectedCategory === 'OBC') multiplier = 0.62;
-    if (selectedCategory === 'EWS') multiplier = 0.60;
-    if (selectedCategory === 'SC') multiplier = 0.52;
-    if (selectedCategory === 'ST') multiplier = 0.46;
-
-    const base = Math.round(maxPossibleMarks * multiplier);
-    return `${Math.max(1, base - 3)} - ${Math.min(maxPossibleMarks, base + 2)}`;
-  }, [maxPossibleMarks, selectedCategory]);
-
   // Formatted date string for attempt banner
   const formattedAttemptDate = useMemo(() => {
     const timestamp = currentAttempt.endTime || currentAttempt.startTime || Date.now();
     const d = new Date(timestamp);
-    const day = d.getDate();
-    const month = d.toLocaleString('en-US', { month: 'short' });
-    const year = d.getFullYear();
-    const time = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-    return `${day} ${month} ${year}, ${time}`;
+    return d.toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
   }, [currentAttempt]);
 
   // Rating handler
-  const handleRate = (rating: number) => {
-    setUserRating(rating);
-    setRatingSubmitted(true);
-  };
-
   // Google Search for Question solution
   const handleGoogleSearch = () => {
     const currentQ = test.questions[currentQuestionIndex];
@@ -329,21 +304,21 @@ export default function ReviewInterface() {
     <div className="min-h-screen bg-[#f8fafc] text-slate-800 font-sans pb-16 selection:bg-cyan-500 selection:text-white" id="test-analysis-root">
       
       {/* 1. TOP HEADER / NAVBAR (Exact Testbook Style) */}
-      <header className="sticky top-0 z-30 bg-white border-b border-slate-200/90 shadow-sm px-4 sm:px-8 py-2.5">
+      <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-slate-100/80 px-4 sm:px-8 py-2.5">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
           
           {/* Left: Brand & Exam Title */}
           <div className="flex items-center gap-3 w-full md:w-auto overflow-hidden">
             <div 
               onClick={() => navigate('/tests')}
-              className="flex items-center gap-2 cursor-pointer shrink-0"
+              className="flex items-center gap-2.5 cursor-pointer hover:opacity-90 transition-opacity shrink-0"
               title="Go to all tests"
             >
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-teal-600 flex items-center justify-center text-white shadow-sm shadow-cyan-500/20">
+              <div className="bg-blue-600 w-8 h-8 rounded-xl shadow-sm text-white flex items-center justify-center">
                 <BookOpen className="w-4 h-4" />
               </div>
-              <span className="font-black text-lg text-slate-800 tracking-tight hidden sm:inline">
-                test<span className="text-cyan-600">book</span>
+              <span className="font-bold text-xl text-slate-800 tracking-tight hidden sm:inline">
+                Mockly
               </span>
             </div>
 
@@ -374,34 +349,6 @@ export default function ReviewInterface() {
               </div>
             </button>
 
-            {/* Rate the Test Component */}
-            <div className="flex items-center gap-1 text-xs text-slate-500 font-medium shrink-0 bg-slate-50 border border-slate-200/80 px-2.5 py-1 rounded-lg">
-              <span className="hidden xl:inline text-slate-600">Rate the Test:</span>
-              <div className="flex items-center gap-0.5" onMouseLeave={() => setHoverRating(0)}>
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <button
-                    key={star}
-                    type="button"
-                    onClick={() => handleRate(star)}
-                    onMouseEnter={() => setHoverRating(star)}
-                    className="p-0.5 focus:outline-none transition-transform hover:scale-110"
-                    title={`Rate ${star} star${star > 1 ? 's' : ''}`}
-                  >
-                    <Star
-                      className={cn(
-                        "w-3.5 h-3.5 transition-colors",
-                        (hoverRating || userRating) >= star 
-                          ? "fill-amber-400 text-amber-400" 
-                          : "text-slate-300 hover:text-slate-400"
-                      )}
-                    />
-                  </button>
-                ))}
-              </div>
-              {ratingSubmitted && (
-                <span className="text-[10px] font-bold text-emerald-600 ml-1">Thanks!</span>
-              )}
-            </div>
 
             {/* Navigation links & Solutions Button */}
             <div className="flex items-center gap-2 shrink-0">
@@ -538,7 +485,7 @@ export default function ReviewInterface() {
                 Overall Performance Summary
               </h2>
 
-              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-4 sm:p-6 md:p-8">
+              <div className="bg-white rounded-2xl border border-slate-100/80 shadow-[0_2px_10px_rgba(0,0,0,0.03)] p-4 sm:p-6">
                 <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8 items-center">
                   
                   {/* Metric 1: Score */}
@@ -612,44 +559,10 @@ export default function ReviewInterface() {
                   Sectional Summary
                 </h2>
 
-                {/* Estimated Cutoffs Category Selector */}
-                <div className="flex items-center gap-2 text-xs font-medium text-slate-600">
-                  <span>Estimated cutoffs :</span>
-                  <div className="relative">
-                    <button
-                      type="button"
-                      onClick={() => setIsCategoryDropdownOpen(prev => !prev)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1 bg-white border border-slate-300 rounded-md text-xs font-bold text-cyan-700 hover:border-cyan-500 transition-colors shadow-2xs"
-                    >
-                      <span>{selectedCategory}</span>
-                      <ChevronDown className="w-3 h-3 text-slate-400" />
-                    </button>
-
-                    {isCategoryDropdownOpen && (
-                      <div className="absolute right-0 mt-1 w-32 bg-white border border-slate-200 rounded-lg shadow-lg py-1 z-20">
-                        {(['General', 'OBC', 'EWS', 'SC', 'ST'] as CutoffCategory[]).map(cat => (
-                          <button
-                            key={cat}
-                            onClick={() => {
-                              setSelectedCategory(cat);
-                              setIsCategoryDropdownOpen(false);
-                            }}
-                            className={cn(
-                              "w-full text-left px-3 py-1.5 text-xs font-semibold hover:bg-cyan-50 hover:text-cyan-700 transition-colors",
-                              selectedCategory === cat ? "text-cyan-600 bg-cyan-50/50" : "text-slate-700"
-                            )}
-                          >
-                            {cat}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
               </div>
 
               {/* Clean Structured Sectional Table */}
-              <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden">
+              <div className="bg-white rounded-2xl border border-slate-100/80 shadow-[0_2px_10px_rgba(0,0,0,0.03)] overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
                     <thead>
@@ -678,9 +591,6 @@ export default function ReviewInterface() {
                             <td className="py-4 px-4 sm:px-6 bg-[#f5f3ff]/60 border-l border-r border-purple-100/50">
                               <div className="font-black text-slate-900">
                                 {sec.score} <span className="font-normal text-slate-400">/ {sec.maxMarks}</span>
-                              </div>
-                              <div className="text-[11px] font-semibold text-slate-400 mt-0.5">
-                                {sec.cutoffRange} cut-off
                               </div>
                             </td>
 
@@ -713,25 +623,18 @@ export default function ReviewInterface() {
 
                       {/* Total / Overall Row */}
                       <tr className="bg-slate-50/90 font-bold border-t-2 border-slate-200">
-                        <td className="py-4 px-4 sm:px-6 text-slate-900">
-                          Total
-                        </td>
                         <td className="py-4 px-4 sm:px-6 bg-[#f5f3ff]/90 border-l border-r border-purple-200/70">
                           <div className="font-black text-slate-900">
                             {netMarks} <span className="font-normal text-slate-400">/ {maxPossibleMarks}</span>
                           </div>
                           <div className="text-[11px] font-semibold text-slate-400 mt-0.5">
-                            {overallCutoffRange} cut-off
                           </div>
-                        </td>
-                        <td className="py-4 px-4 sm:px-6 bg-[#ecfeff]/90 border-r border-cyan-200/70 font-black text-slate-900">
-                          {attemptedCount} <span className="font-normal text-slate-400">/ {totalQuestions}</span>
                         </td>
                         <td className="py-4 px-4 sm:px-6 bg-[#f0fdf4]/90 border-r border-emerald-200/70 font-black text-slate-900">
                           {accuracy}%
                         </td>
                         <td className="py-4 px-4 sm:px-6 font-mono text-slate-900">
-                          {formatTime(totalTimeSpentSeconds)} <span className="text-slate-400 font-normal">/ {Math.floor((test.timeLimit || 3600) / 60)} min</span>
+                          {formatTime(totalTimeSpentSeconds)} <span className="text-slate-400 font-normal">/ {Math.floor((derivedTimeLimit || 3600) / 60)} min</span>
                         </td>
                       </tr>
                     </tbody>
@@ -744,7 +647,7 @@ export default function ReviewInterface() {
             <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               
               {/* Left 2 Cols: Sectional Performance Bar Chart */}
-              <div className="lg:col-span-2 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+              <div className="lg:col-span-2 bg-white p-4 rounded-2xl border border-slate-100/80 shadow-[0_2px_10px_rgba(0,0,0,0.03)] space-y-4">
                 <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center justify-between">
                   <span>Sectional Accuracy & Answer Distribution</span>
                   <span className="text-xs font-normal text-slate-400 lowercase">correct vs incorrect vs skipped</span>
@@ -767,7 +670,7 @@ export default function ReviewInterface() {
 
               {/* Right Col: Marking Scheme & Solutions Callout */}
               <div className="space-y-4">
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                <div className="bg-white p-4 rounded-2xl border border-slate-100/80 shadow-[0_2px_10px_rgba(0,0,0,0.03)] space-y-3">
                   <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">
                     Marking Breakdown
                   </h3>
@@ -816,7 +719,7 @@ export default function ReviewInterface() {
           <div className="space-y-4 animate-in fade-in duration-300">
             
             {/* Top Bar for Solutions */}
-            <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="bg-white p-3 rounded-2xl border border-slate-100/80 shadow-[0_2px_10px_rgba(0,0,0,0.03)] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => setViewMode('analysis')}
@@ -875,7 +778,7 @@ export default function ReviewInterface() {
             <div className="flex flex-col lg:flex-row gap-4">
               
               {/* Left Question Palette */}
-              <div className="lg:w-80 shrink-0 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-[320px] lg:h-[620px]">
+              <div className="lg:w-80 shrink-0 bg-white rounded-2xl border border-slate-100/80 shadow-[0_2px_10px_rgba(0,0,0,0.03)] overflow-hidden flex flex-col h-[320px] lg:h-[620px]">
                 <div className="p-3.5 border-b border-slate-100 bg-slate-50/60 flex items-center justify-between">
                   <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
                     Questions Palette
@@ -930,7 +833,7 @@ export default function ReviewInterface() {
 
               {/* Right Solution View */}
               {currentQuestion && (
-                <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6 space-y-4 min-w-0">
+                <div className="flex-1 bg-white rounded-2xl border border-slate-100/80 shadow-[0_2px_10px_rgba(0,0,0,0.03)] p-4 sm:p-5 space-y-4 min-w-0">
                   
                   {/* Question Header */}
                   <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -963,6 +866,7 @@ export default function ReviewInterface() {
                     <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
                       {qText || ''}
                     </Markdown>
+                    <MediaViewer media={currentQuestion.media} />
                   </div>
 
                   {/* Options List */}
@@ -996,6 +900,7 @@ export default function ReviewInterface() {
                             <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
                               {optText || ''}
                             </Markdown>
+                            <MediaViewer media={option.media} />
                           </div>
                         </div>
                       );
@@ -1012,6 +917,7 @@ export default function ReviewInterface() {
                         <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
                           {expText || ''}
                         </Markdown>
+                        <MediaViewer media={currentQuestion.explanationMedia} />
                       </div>
                     </div>
                   )}

@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useStore } from '../store/useStore';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Test } from '../types';
@@ -70,8 +71,37 @@ interface ExamPersonalityModalProps {
 }
 
 export function ExamPersonalityModal({ isOpen, onClose, test, onSave }: ExamPersonalityModalProps) {
+  const tests = useStore((state) => state.tests);
+  
+  const derivedTimeLimit = useMemo(() => {
+    if (test?.timeLimit && test.timeLimit > 0) return test.timeLimit;
+    if (test?.sections && test.sections.length > 0) {
+      const sum = test.sections.reduce((acc: number, sec: any) => acc + (sec.timeLimit || 0), 0);
+      if (sum > 0) return sum;
+    }
+    return 3600; // default 1 hour
+  }, [test]);
+  
   const [selectedPresetId, setSelectedPresetId] = useState<string>('custom');
   const [examCategory, setExamCategory] = useState<string>('');
+  const [showCategorySuggestions, setShowCategorySuggestions] = useState(false);
+  const categoryRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (categoryRef.current && !categoryRef.current.contains(event.target as Node)) {
+        setShowCategorySuggestions(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [categoryRef]);
+
+  const existingCategories = Array.from(new Set(tests.map(t => t.examCategory?.trim()).filter(Boolean))) as string[];
+  const presetCategories = EXAM_PRESETS.map(p => p.category);
+  const allCategorySuggestions = Array.from(new Set([...presetCategories, ...existingCategories])).filter(c => c.toLowerCase().includes(examCategory.toLowerCase()) && c !== examCategory);
   const [positiveMarks, setPositiveMarks] = useState<number>(1.0);
   const [negativeMarks, setNegativeMarks] = useState<number>(0.25);
   const [strictSectionalTiming, setStrictSectionalTiming] = useState<boolean>(false);
@@ -104,7 +134,7 @@ export function ExamPersonalityModal({ isOpen, onClose, test, onSave }: ExamPers
         const d = new Date(test.settings.scheduledEndTime);
         setScheduledEndTime(new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16));
       } else {
-        const end = new Date(Date.now() + (test.timeLimit || 3600) * 1000);
+        const end = new Date(Date.now() + (derivedTimeLimit || 3600) * 1000);
         setScheduledEndTime(new Date(end.getTime() - end.getTimezoneOffset() * 60000).toISOString().slice(0, 16));
       }
       
@@ -117,7 +147,7 @@ export function ExamPersonalityModal({ isOpen, onClose, test, onSave }: ExamPers
         });
         initialSections = Array.from(sectionsMap.entries()).map(([name, count], index) => ({
           name,
-          timeLimit: Math.floor((test.timeLimit || 3600) / sectionsMap.size),
+          timeLimit: Math.floor((derivedTimeLimit || 3600) / sectionsMap.size),
           order: index + 1,
           questionCount: count,
           questionIds: test.questions.filter(q => q.section === name).map(q => q.id) || []
@@ -182,7 +212,7 @@ export function ExamPersonalityModal({ isOpen, onClose, test, onSave }: ExamPers
     // If section switching is enabled, sectional timing is strictly false
     const finalStrictSectionalTiming = allowSectionSwitching ? false : strictSectionalTiming;
 
-    let totalDuration = finalStrictSectionalTiming ? sections.reduce((acc, s) => acc + s.timeLimit, 0) : test.timeLimit;
+    let totalDuration = finalStrictSectionalTiming ? sections.reduce((acc, s) => acc + s.timeLimit, 0) : derivedTimeLimit;
     if (isScheduled && parsedStartTime && parsedEndTime && parsedEndTime > parsedStartTime) {
       totalDuration = Math.round((parsedEndTime - parsedStartTime) / 1000);
     }
@@ -215,7 +245,7 @@ export function ExamPersonalityModal({ isOpen, onClose, test, onSave }: ExamPers
           initial={{ opacity: 0, scale: 0.95, y: 15 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 15 }}
-          className="bg-white rounded-2xl max-w-xl w-full shadow-2xl border border-slate-100 overflow-hidden relative z-10 my-8"
+          className="bg-white rounded-2xl max-w-xl w-full shadow-[0_8px_32px_rgba(0,0,0,0.08)] border border-slate-100 overflow-hidden relative z-10 my-8"
         >
           {/* Header */}
           <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 p-6 text-white relative">
@@ -258,7 +288,7 @@ export function ExamPersonalityModal({ isOpen, onClose, test, onSave }: ExamPers
                       className={`text-left p-3.5 rounded-2xl border transition-all relative flex flex-col justify-between ${
                         isSelected
                           ? 'bg-blue-50/80 border-blue-500 ring-2 ring-blue-500/20 shadow-sm'
-                          : 'bg-slate-50/70 border-slate-200 hover:border-slate-300 hover:bg-slate-100/60'
+                          : 'bg-slate-50/70 border-slate-100/80 hover:border-slate-300 hover:bg-slate-100/60'
                       }`}
                     >
                       <div>
@@ -277,7 +307,7 @@ export function ExamPersonalityModal({ isOpen, onClose, test, onSave }: ExamPers
                         </p>
                       </div>
 
-                      <div className="mt-3 pt-2 border-t border-slate-200/60 flex items-center justify-between text-xs">
+                      <div className="mt-3 pt-2 border-t border-slate-100/80/60 flex items-center justify-between text-xs">
                         <span className={`font-semibold px-2 py-0.5 rounded-md ${
                           preset.negativeMarks === 0 
                             ? 'bg-emerald-100 text-emerald-800' 
@@ -293,7 +323,7 @@ export function ExamPersonalityModal({ isOpen, onClose, test, onSave }: ExamPers
             </div>
 
             {/* Quick No Negative Marking Toggle */}
-            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 flex items-center justify-between">
+            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100/80 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
                   negativeMarks === 0 ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-200 text-slate-500'
@@ -327,7 +357,7 @@ export function ExamPersonalityModal({ isOpen, onClose, test, onSave }: ExamPers
 
             
             {/* Switch Between Sections Option */}
-            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 flex items-center justify-between">
+            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100/80 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
                   allowSectionSwitching ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-500'
@@ -364,7 +394,7 @@ export function ExamPersonalityModal({ isOpen, onClose, test, onSave }: ExamPers
             <div className={`rounded-2xl p-4 border transition-all flex items-center justify-between ${
               strictSectionalTiming 
                 ? 'bg-blue-50/70 border-blue-200' 
-                : 'bg-slate-50 border-slate-200'
+                : 'bg-slate-50 border-slate-100/80'
             }`}>
               <div className="flex items-center gap-3">
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
@@ -401,7 +431,7 @@ export function ExamPersonalityModal({ isOpen, onClose, test, onSave }: ExamPers
             
             {/* Section Timing Configuration */}
             {strictSectionalTiming && sections.length > 0 && (
-              <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-4">
+              <div className="bg-white p-4 rounded-2xl border border-slate-100/80 space-y-4">
                 <div className="flex items-center justify-between">
                   <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
                     <Clock className="w-3.5 h-3.5 text-blue-600" />
@@ -425,7 +455,7 @@ export function ExamPersonalityModal({ isOpen, onClose, test, onSave }: ExamPers
                           newSections[idx].timeLimit = val * 60;
                           setSections(newSections);
                         }}
-                        className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-bold text-slate-800 focus:border-blue-500 focus:outline-none transition-all bg-slate-50 focus:bg-white"
+                        className="w-full px-3 py-2 rounded-lg border border-slate-100/80 text-sm font-bold text-slate-800 focus:border-blue-500 focus:outline-none transition-all bg-slate-50 focus:bg-white"
                       />
                     </div>
                   ))}
@@ -434,7 +464,7 @@ export function ExamPersonalityModal({ isOpen, onClose, test, onSave }: ExamPers
             )}
 
             {/* Scheduled Test Window Configuration */}
-            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 space-y-3">
+            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100/80 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
@@ -467,7 +497,7 @@ export function ExamPersonalityModal({ isOpen, onClose, test, onSave }: ExamPers
               </div>
 
               {isScheduled && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-slate-200/80">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-slate-100/80/80">
                   <div>
                     <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
                       Scheduled Start Time
@@ -476,7 +506,7 @@ export function ExamPersonalityModal({ isOpen, onClose, test, onSave }: ExamPers
                       type="datetime-local"
                       value={scheduledStartTime}
                       onChange={(e) => setScheduledStartTime(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-800 bg-white focus:border-amber-500 focus:outline-none"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-100/80 text-xs font-semibold text-slate-800 bg-white focus:border-amber-500 focus:outline-none"
                     />
                   </div>
                   <div>
@@ -487,7 +517,7 @@ export function ExamPersonalityModal({ isOpen, onClose, test, onSave }: ExamPers
                       type="datetime-local"
                       value={scheduledEndTime}
                       onChange={(e) => setScheduledEndTime(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-800 bg-white focus:border-amber-500 focus:outline-none"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-100/80 text-xs font-semibold text-slate-800 bg-white focus:border-amber-500 focus:outline-none"
                     />
                   </div>
                 </div>
@@ -495,7 +525,7 @@ export function ExamPersonalityModal({ isOpen, onClose, test, onSave }: ExamPers
             </div>
 
             {/* Custom Values Adjustment */}
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-4">
+            <div className="bg-white p-4 rounded-2xl border border-slate-100/80 space-y-4">
               <div className="flex items-center justify-between">
                 <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
                   <Sliders className="w-3.5 h-3.5 text-blue-600" />
@@ -523,7 +553,7 @@ export function ExamPersonalityModal({ isOpen, onClose, test, onSave }: ExamPers
                       setPositiveMarks(parseFloat(e.target.value) || 0);
                       setSelectedPresetId('custom');
                     }}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-emerald-700 bg-slate-50/50 focus:bg-white focus:border-blue-500 focus:outline-none transition-all"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-100/80 text-sm font-bold text-emerald-700 bg-slate-50/50 focus:bg-white focus:border-blue-500 focus:outline-none transition-all"
                   />
                 </div>
 
@@ -544,13 +574,13 @@ export function ExamPersonalityModal({ isOpen, onClose, test, onSave }: ExamPers
                     className={`w-full px-3.5 py-2.5 rounded-xl border text-sm font-bold bg-slate-50/50 focus:bg-white focus:outline-none transition-all ${
                       negativeMarks === 0 
                         ? 'border-emerald-200 text-emerald-700 bg-emerald-50/30' 
-                        : 'border-slate-200 text-rose-700 focus:border-blue-500'
+                        : 'border-slate-100/80 text-rose-700 focus:border-blue-500'
                     }`}
                   />
                 </div>
               </div>
 
-              <div>
+              <div ref={categoryRef} className="relative">
                 <label className="block text-xs font-semibold text-slate-600 mb-1">
                   Exam Label / Category Name
                 </label>
@@ -558,9 +588,37 @@ export function ExamPersonalityModal({ isOpen, onClose, test, onSave }: ExamPers
                   type="text"
                   placeholder="e.g. SSC CGL, Banking, Railway RRB NTPC, Custom"
                   value={examCategory}
-                  onChange={(e) => setExamCategory(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-medium text-slate-800 focus:border-blue-500 focus:outline-none"
+                  onChange={(e) => {
+                    setExamCategory(e.target.value);
+                    setShowCategorySuggestions(true);
+                  }}
+                  onFocus={() => setShowCategorySuggestions(true)}
+                  className="w-full px-3.5 py-2 rounded-xl border border-slate-100/80 text-xs font-medium text-slate-800 focus:border-blue-500 focus:outline-none"
                 />
+                <AnimatePresence>
+                  {showCategorySuggestions && allCategorySuggestions.length > 0 && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -5 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-48 overflow-y-auto custom-scrollbar"
+                    >
+                      {allCategorySuggestions.map((cat, idx) => (
+                        <div
+                          key={idx}
+                          className="px-3.5 py-2.5 text-xs text-slate-700 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 font-medium transition-colors"
+                          onClick={() => {
+                            setExamCategory(cat);
+                            setShowCategorySuggestions(false);
+                          }}
+                        >
+                          {cat}
+                        </div>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             </div>
 
@@ -606,7 +664,7 @@ export function ExamPersonalityModal({ isOpen, onClose, test, onSave }: ExamPers
             <button
               type="button"
               onClick={onClose}
-              className="px-5 py-2.5 rounded-xl border border-slate-200 font-bold text-slate-600 hover:bg-slate-100 text-xs transition-colors"
+              className="px-5 py-2.5 rounded-xl border border-slate-100/80 font-bold text-slate-600 hover:bg-slate-100 text-xs transition-colors"
             >
               Cancel
             </button>

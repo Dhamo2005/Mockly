@@ -105,7 +105,7 @@ export function ShareTestModal({ test: initialTest, isOpen, onClose }: ShareTest
           animate={{ scale: 1, opacity: 1, y: 0 }}
           exit={{ scale: 0.95, opacity: 0, y: 10 }}
           transition={{ type: 'spring', damping: 25, stiffness: 350 }}
-          className="relative bg-white rounded-3xl shadow-2xl border border-slate-200/80 w-full max-w-lg overflow-hidden z-10 flex flex-col font-sans"
+          className="relative bg-white rounded-3xl shadow-[0_8px_32px_rgba(0,0,0,0.08)] border border-slate-100/80/80 w-full max-w-lg overflow-hidden z-10 flex flex-col font-sans"
         >
           {/* Header */}
           <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
@@ -134,7 +134,7 @@ export function ShareTestModal({ test: initialTest, isOpen, onClose }: ShareTest
                 Access Permissions
               </label>
               
-              <div className="border border-slate-200 rounded-2xl p-4 space-y-3 bg-white shadow-xs">
+              <div className="border border-slate-100/80 rounded-2xl p-4 space-y-3 bg-white shadow-xs">
                 <div className="flex items-start gap-3.5">
                   <div className={`p-2.5 rounded-2xl mt-0.5 shrink-0 ${
                     isPublic 
@@ -183,7 +183,7 @@ export function ShareTestModal({ test: initialTest, isOpen, onClose }: ShareTest
               </label>
 
               {/* Option 1: Test Details & Overview Link */}
-              <div className="flex items-center justify-between gap-2 p-2.5 rounded-2xl bg-slate-50 border border-slate-200">
+              <div className="flex items-center justify-between gap-2 p-2.5 rounded-2xl bg-slate-50 border border-slate-100/80">
                 <div className="flex items-center gap-2.5 min-w-0 flex-1 pl-1">
                   <Eye className="w-4 h-4 text-slate-400 shrink-0" />
                   <div className="min-w-0">
@@ -197,7 +197,7 @@ export function ShareTestModal({ test: initialTest, isOpen, onClose }: ShareTest
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
                     copiedLink === 'details'
                       ? 'bg-emerald-600 text-white shadow-xs'
-                      : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 shadow-xs'
+                      : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-100/80 shadow-xs'
                   }`}
                 >
                   {copiedLink === 'details' ? (
@@ -215,7 +215,7 @@ export function ShareTestModal({ test: initialTest, isOpen, onClose }: ShareTest
               </div>
 
               {/* Option 2: Direct Exam Launch Link */}
-              <div className="flex items-center justify-between gap-2 p-2.5 rounded-2xl bg-slate-50 border border-slate-200">
+              <div className="flex items-center justify-between gap-2 p-2.5 rounded-2xl bg-slate-50 border border-slate-100/80">
                 <div className="flex items-center gap-2.5 min-w-0 flex-1 pl-1">
                   <PlayCircle className="w-4 h-4 text-blue-500 shrink-0" />
                   <div className="min-w-0">
@@ -229,7 +229,7 @@ export function ShareTestModal({ test: initialTest, isOpen, onClose }: ShareTest
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
                     copiedLink === 'direct'
                       ? 'bg-emerald-600 text-white shadow-xs'
-                      : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 shadow-xs'
+                      : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-100/80 shadow-xs'
                   }`}
                 >
                   {copiedLink === 'direct' ? (

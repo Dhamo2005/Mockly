@@ -19,7 +19,7 @@ export default function Settings() {
     lastSyncTime: driveLastSyncTime,
     files: driveFiles,
     statusMessage: driveStatusMessage,
-    connect: connectDrive,
+    connect,
     disconnect: disconnectDrive,
     backupToDrive,
     restoreFromDrive,
@@ -57,7 +57,7 @@ export default function Settings() {
                   </span>
                 </div>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  All tests, questions, and attempt records are saved to your personal Google Drive in the <strong>"Mockly App Data"</strong> folder.
+                  All tests, questions, and attempt records are saved to your personal Google Drive in the <strong>"Home"</strong> folder.
                 </p>
               </div>
             </div>
@@ -77,7 +77,7 @@ export default function Settings() {
               </div>
             ) : (
               <button
-                onClick={() => connectDrive()}
+                onClick={signInWithGoogle}
                 disabled={isDriveConnecting}
                 className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
               >
@@ -98,7 +98,7 @@ export default function Settings() {
                 <div className="p-4 bg-slate-50 border border-slate-100 rounded-xl">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">Stored Files</span>
                   <span className="text-lg font-bold text-slate-800 mt-0.5 block">{driveFiles.length} files in Drive</span>
-                  <span className="text-xs text-slate-500">Folder: Mockly App Data</span>
+                  <span className="text-xs text-slate-500">Folder: Home</span>
                 </div>
 
                 <div className="p-4 bg-slate-50 border border-slate-100 rounded-xl">
@@ -205,7 +205,7 @@ export default function Settings() {
                 <span>Google Drive will store all your tests, questions, and attempt records in a dedicated folder in your Google Drive.</span>
               </div>
               <button
-                onClick={() => connectDrive()}
+                onClick={signInWithGoogle}
                 className="font-bold text-blue-600 hover:underline shrink-0 cursor-pointer"
               >
                 Connect Now &rarr;

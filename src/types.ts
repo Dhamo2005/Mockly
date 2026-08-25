@@ -73,6 +73,7 @@ export interface Question {
   correctOptionId: string;
   explanation?: LocalizedText;
   solution?: RichSolution;
+  explanationMedia?: MediaItem[];
   metadata?: QuestionMetadata;
   media?: MediaItem[];
   groupId?: string | null;

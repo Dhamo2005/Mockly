@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { useAuth } from './AuthContext';
 import {
   isDriveConnected,
   requestDriveAccessToken,
@@ -61,6 +62,7 @@ interface GoogleDriveContextType {
 const GoogleDriveContext = createContext<GoogleDriveContextType | null>(null);
 
 export function GoogleDriveProvider({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
   const [isConnected, setIsConnected] = useState<boolean>(isDriveConnected());
   const [isConnecting, setIsConnecting] = useState<boolean>(false);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
@@ -87,14 +89,11 @@ export function GoogleDriveProvider({ children }: { children: React.ReactNode })
 
   const refreshFiles = useCallback(async () => {
     if (!isDriveConnected()) return;
-    setIsSyncing(true);
     try {
       const fileList = await listDriveFiles();
       setFiles(fileList);
     } catch (e: any) {
       console.warn('Failed to fetch Google Drive files list:', e);
-    } finally {
-      setIsSyncing(false);
     }
   }, []);
 
@@ -363,13 +362,22 @@ export function GoogleDriveProvider({ children }: { children: React.ReactNode })
   );
 
   // Auto-refresh from Google Drive on startup / page refresh if token exists
+  // Also connect automatically when user signs in
   useEffect(() => {
     if (isDriveConnected()) {
       setIsConnected(true);
       refreshFiles();
       refreshFromDrive();
     }
-  }, []);
+  }, [user]); // re-run if user changes (e.g. signs in)
+
+  // Handle disconnect when user signs out
+  useEffect(() => {
+    if (!user && isConnected) {
+      setIsConnected(false);
+      setFiles([]);
+    }
+  }, [user, isConnected]);
 
   // Auto-sync debounced trigger when store state changes if autoSync is true
   const lastSyncRef = useRef<number>(Date.now());

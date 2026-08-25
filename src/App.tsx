@@ -6,11 +6,11 @@ import Dashboard from './pages/Dashboard';
 import Tests from './pages/Tests';
 import TestDetails from './pages/TestDetails';
 import TestAnswers from './pages/TestAnswers';
+import TestEditor from './pages/TestEditor';
 import MockTestInterface from './pages/MockTestInterface';
 import ReviewInterface from './pages/ReviewInterface';
 import QuestionBank from './pages/QuestionBank';
 import SettingsPage from './pages/Settings';
-import { motion } from 'motion/react';
 import { useAuth } from './contexts/AuthContext';
 
 import { initDB } from './lib/db';
@@ -34,12 +34,7 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
   if (!user) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/40 to-indigo-50/20 flex flex-col items-center justify-center p-6 text-center font-sans">
-        <motion.div 
-          initial={{ opacity: 0, y: 15 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4 }}
-          className="bg-white/90 backdrop-blur-2xl p-8 md:p-10 rounded-[32px] max-w-md w-full shadow-2xl shadow-blue-500/10 border border-slate-100/80 flex flex-col items-center relative overflow-hidden"
-        >
+        <div className="bg-white/90 backdrop-blur-2xl p-8 md:p-10 rounded-[32px] max-w-md w-full shadow-2xl shadow-blue-500/10 border border-slate-100/80 flex flex-col items-center relative overflow-hidden">
           <div className="w-20 h-20 bg-blue-600/10 rounded-[2rem] flex items-center justify-center mb-6 shadow-inner relative">
             <BookOpen className="w-10 h-10 text-blue-600" />
           </div>
@@ -60,12 +55,10 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
             </div>
           )}
 
-          <motion.button
-            whileHover={{ scale: isSigningIn ? 1 : 1.02 }}
-            whileTap={{ scale: isSigningIn ? 1 : 0.98 }}
+          <button
             onClick={signInWithGoogle}
             disabled={isSigningIn}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-bold py-4 px-6 rounded-2xl shadow-lg shadow-blue-600/25 transition-all duration-200 flex items-center justify-center gap-3 text-sm mt-6 cursor-pointer disabled:cursor-not-allowed"
+            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-bold py-4 px-6 rounded-2xl shadow-lg shadow-blue-600/25 transition-colors flex items-center justify-center gap-3 text-sm mt-6 cursor-pointer disabled:cursor-not-allowed"
           >
             {isSigningIn ? (
               <>
@@ -83,12 +76,12 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
                 <span>Sign In with Google</span>
               </>
             )}
-          </motion.button>
+          </button>
 
           <p className="text-xs text-slate-400 mt-6">
             All your data is securely and privately stored in your Google Drive.
           </p>
-        </motion.div>
+        </div>
       </div>
     );
   };
@@ -116,25 +109,19 @@ const Sidebar = () => {
             aria-current={isActive(item.path) ? 'page' : undefined}
             className="block outline-none"
           >
-            <motion.div
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.99 }}
-              className={`group flex items-center gap-2.5 px-3 py-2 rounded-lg font-medium transition-all duration-300 focus-visible:ring-2 focus-visible:ring-blue-500 ${
+            <div
+              className={`group flex items-center gap-2.5 px-3 py-2 rounded-lg font-medium transition-colors relative focus-visible:ring-2 focus-visible:ring-blue-500 ${
                 isActive(item.path)
-                  ? 'bg-blue-50/80 text-blue-700 shadow-xs border border-blue-100/50'
+                  ? 'bg-blue-50/80 text-blue-700 font-semibold border border-blue-100/50'
                   : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 border border-transparent'
               }`}
             >
-              <item.icon className={`h-4 w-4 transition-transform duration-300 ${isActive(item.path) ? 'scale-105' : 'group-hover:scale-105 group-hover:text-blue-500'}`} />
-              <span className="text-sm tracking-tight">{item.label}</span>
               {isActive(item.path) && (
-                <motion.div 
-                  layoutId="sidebar-active"
-                  className="absolute left-0 w-[3px] h-6 bg-blue-600 rounded-r-full"
-                  transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                />
+                <div className="absolute left-0 top-2 bottom-2 w-[3px] bg-blue-600 rounded-r-full" />
               )}
-            </motion.div>
+              <item.icon className={`h-4 w-4 ${isActive(item.path) ? 'text-blue-600' : 'text-slate-500 group-hover:text-slate-700'}`} />
+              <span className="text-sm tracking-tight">{item.label}</span>
+            </div>
           </Link>
         ))}
       </nav>
@@ -153,7 +140,7 @@ const MobileNav = () => {
   ];
 
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-xl border-t border-slate-100 flex items-center justify-around h-16 pb-[env(safe-area-inset-bottom)] z-50 shadow-[0_-4px_24px_rgba(0,0,0,0.03)]" aria-label="Mobile Navigation">
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-t border-slate-100 flex items-center justify-around h-16 pb-[env(safe-area-inset-bottom)] z-50 shadow-[0_-4px_24px_rgba(0,0,0,0.03)]" aria-label="Mobile Navigation">
       {navItems.map((item) => (
         <Link
           key={item.path}
@@ -161,41 +148,34 @@ const MobileNav = () => {
           aria-current={isActive(item.path) ? 'page' : undefined}
           className="block outline-none"
         >
-          <motion.div
-            whileTap={{ scale: 0.9 }}
-            className={`group flex flex-col items-center justify-center gap-1 p-2 w-16 h-14 transition-all duration-300 rounded-2xl relative ${
+          <div
+            className={`group flex flex-col items-center justify-center gap-1 p-2 w-16 h-14 rounded-2xl relative transition-colors ${
               isActive(item.path)
-                ? 'text-blue-600'
+                ? 'text-blue-600 bg-blue-50/80 font-semibold'
                 : 'text-slate-400 hover:text-slate-700'
             }`}
           >
-            {isActive(item.path) && (
-              <motion.div 
-                layoutId="mobile-nav-active"
-                className="absolute inset-0 bg-blue-50 rounded-2xl -z-10"
-                transition={{ type: "spring", stiffness: 300, damping: 30 }}
-              />
-            )}
-            <item.icon className={`h-5 w-5 transition-transform duration-300 ${isActive(item.path) ? 'scale-110' : 'group-hover:scale-110'}`} />
-            <span className={`text-[11px] font-semibold tracking-wide transition-all duration-300 ${isActive(item.path) ? 'opacity-100' : 'opacity-80'}`}>
+            <item.icon className="h-5 w-5" />
+            <span className="text-[11px] tracking-wide">
               {item.label}
             </span>
-          </motion.div>
+          </div>
         </Link>
       ))}
     </nav>
   );
 };
 
+
 const AppLayout = ({ children }: { children: React.ReactNode }) => {
   return (
-    <div className="flex flex-col h-[100dvh] bg-slate-50 overflow-hidden font-sans">
+    <div className="flex flex-col min-h-screen bg-slate-50 font-sans">
       <div className="aria-announcer sr-only" aria-live="polite" aria-atomic="true" id="global-announcer"></div>
       <Header />
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1">
         <Sidebar />
-        <main className="flex-1 flex flex-col min-w-0 bg-[#f8fafc] overflow-hidden relative border-l border-slate-200/50">
-          <div className="flex-1 px-3 py-4 md:px-6 md:py-6 pb-20 md:pb-6 overflow-y-auto custom-scrollbar">
+        <main className="flex-1 min-w-0 bg-[#f8fafc] border-l border-slate-200/50 flex flex-col">
+          <div className="flex-1 px-3 py-4 md:px-6 md:py-6 pb-24 md:pb-8">
             {children}
           </div>
         </main>
@@ -221,6 +201,7 @@ export default function App() {
             <Route path="/tests" element={<AppLayout><Tests /></AppLayout>} />
             <Route path="/test-details/:testId" element={<AppLayout><TestDetails /></AppLayout>} />
             <Route path="/test-answers/:testId" element={<AppLayout><TestAnswers /></AppLayout>} />
+            <Route path="/test-edit/:testId" element={<TestEditor />} />
             <Route path="/test/:testId" element={<MockTestInterface />} />
             <Route path="/review/:attemptId" element={<ReviewInterface />} />
             <Route path="/bank" element={<AppLayout><QuestionBank /></AppLayout>} />

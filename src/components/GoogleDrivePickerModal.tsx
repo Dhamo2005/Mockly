@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, HardDrive, Download, Trash2, RefreshCw, CheckCircle2, FileJson, Folder, ArrowRight, Loader2, Sparkles, ChevronRight } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 import { useGoogleDrive } from '../contexts/GoogleDriveContext';
 import { DriveBackupFile, listDriveFiles } from '../lib/googleDriveSync';
 import { formatDate } from '../lib/dateUtils';
@@ -17,6 +18,7 @@ export const GoogleDrivePickerModal: React.FC<GoogleDrivePickerModalProps> = ({
   onClose,
   onSelectTest,
 }) => {
+  const { signInWithGoogle } = useAuth();
   const {
     isConnected,
     isConnecting,
@@ -33,7 +35,7 @@ export const GoogleDrivePickerModal: React.FC<GoogleDrivePickerModalProps> = ({
   const [deletingFileId, setDeletingFileId] = useState<string | null>(null);
   const [restoringBackup, setRestoringBackup] = useState(false);
 
-  const [currentPath, setCurrentPath] = useState<{id: string | null; name: string}[]>([{ id: null, name: 'Mockly App Data' }]);
+  const [currentPath, setCurrentPath] = useState<{id: string | null; name: string}[]>([{ id: null, name: 'Home' }]);
   const [localFiles, setLocalFiles] = useState<DriveBackupFile[]>([]);
   const [isLoadingFolder, setIsLoadingFolder] = useState(false);
 
@@ -177,7 +179,7 @@ export const GoogleDrivePickerModal: React.FC<GoogleDrivePickerModalProps> = ({
                   Store and load your test papers, question banks, and progress directly in your personal Google Drive with 100% privacy and free quota.
                 </p>
                 <button
-                  onClick={() => connect()}
+                  onClick={() => signInWithGoogle()}
                   disabled={isConnecting}
                   className="mt-6 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm px-6 py-3.5 rounded-xl shadow-md transition-all flex items-center gap-2.5 disabled:opacity-60"
                 >
