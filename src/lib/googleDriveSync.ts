@@ -847,6 +847,14 @@ export async function deleteLiveTestSessionFromDrive(
   testId: string,
   testTitle?: string
 ): Promise<boolean> {
+  if (pendingLiveQueue?.testId === testId) {
+    pendingLiveQueue = null;
+    if (liveDebounceTimer) {
+      clearTimeout(liveDebounceTimer);
+      liveDebounceTimer = null;
+    }
+  }
+
   try {
     const token = await requestDriveAccessToken();
     const folderId = await getOrCreateAppFolder(token);
@@ -923,6 +931,7 @@ interface LiveQueueItem {
 let pendingLiveQueue: LiveQueueItem | null = null;
 let isLiveSyncInFlight = false;
 let liveDebounceTimer: any = null;
+const deletedTestSessionIds = new Set<string>();
 
 export function queueLiveSessionDriveSync(
   testId: string,

@@ -234,15 +234,13 @@ export default function ReviewInterface() {
 
   // Total time spent across all questions
   const totalTimeSpentSeconds = useMemo(() => {
-    if (currentAttempt.durationMs) {
-      return Math.floor(currentAttempt.durationMs / 1000);
-    }
-    if (currentAttempt.timeSpent && Object.keys(currentAttempt.timeSpent).length > 0) {
-      return Object.values(currentAttempt.timeSpent).reduce((acc, t) => acc + ((t as number) || 0), 0);
+    if (currentAttempt.timeSpent) {
+      return Object.values(currentAttempt.timeSpent).reduce((acc, t) => acc + (t || 0), 0);
     }
     if (currentAttempt.startTime && currentAttempt.endTime) {
       return Math.floor((currentAttempt.endTime - currentAttempt.startTime) / 1000);
     }
+
     return 0;
   }, [currentAttempt]);
 

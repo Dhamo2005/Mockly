@@ -522,21 +522,7 @@ export default function TestDetails() {
                     </div>
                     <div>
                       <p className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-0.5">Time</p>
-                      <p className="text-sm font-bold text-slate-800">
-                        {(() => {
-                          let totalMs = 0;
-                          if (latestAttempt.durationMs) {
-                            totalMs = latestAttempt.durationMs;
-                          } else if (latestAttempt.timeSpent && Object.keys(latestAttempt.timeSpent).length > 0) {
-                            totalMs = Object.values(latestAttempt.timeSpent).reduce((acc, t) => acc + ((t as number) || 0), 0) * 1000;
-                          } else if (latestAttempt.endTime && latestAttempt.startTime) {
-                            totalMs = latestAttempt.endTime - latestAttempt.startTime;
-                          }
-                          const mins = Math.floor(totalMs / 60000);
-                          const secs = Math.floor((totalMs % 60000) / 1000);
-                          return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
-                        })()}
-                      </p>
+                      <p className="text-sm font-bold text-slate-800">{Math.floor((latestAttempt.endTime! - latestAttempt.startTime) / 60000)}m</p>
                     </div>
                     <div>
                       <p className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-0.5">Attempted</p>
