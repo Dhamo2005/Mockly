@@ -14,6 +14,7 @@ import { v4 as uuidv4 } from 'uuid';
 import Markdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
+import rehypeRaw from 'rehype-raw';
 import 'katex/dist/katex.min.css';
 import { useAuth } from '../contexts/AuthContext';
 import { useGoogleDrive } from '../contexts/GoogleDriveContext';
@@ -1734,7 +1735,7 @@ export default function MockTestInterface() {
             
             {/* Question Text */}
             <div className="text-base sm:text-[17px] text-slate-800 mb-6 leading-relaxed flex-1 select-text">
-              <div className="markdown-body"><Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{qText || ''}</Markdown></div>
+              <div className="markdown-body"><Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]}>{qText || ''}</Markdown></div>
               <MediaViewer media={currentQuestion?.media} />
             </div>
             
@@ -1763,7 +1764,7 @@ export default function MockTestInterface() {
                        />
                     </div>
                     <span className="text-sm sm:text-base text-slate-800 flex-1 pt-[1px] select-text">
-                      <div className="markdown-body"><Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{optText || ''}</Markdown></div>
+                      <div className="markdown-body"><Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]}>{optText || ''}</Markdown></div>
                       <MediaViewer media={option.media} />
                     </span>
                     <span className="hidden sm:flex text-[10px] font-bold text-slate-400 border border-slate-100/80 rounded px-1.5 py-0.5 ml-2 mt-0.5 bg-white">

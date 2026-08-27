@@ -38,6 +38,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
+import rehypeRaw from 'rehype-raw';
 import 'katex/dist/katex.min.css';
 
 
@@ -861,7 +862,7 @@ export default function ReviewInterface() {
 
                   {/* Question Text */}
                   <div className="text-sm text-slate-800 leading-relaxed markdown-body">
-                    <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                    <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]}>
                       {qText || ''}
                     </Markdown>
                     <MediaViewer media={currentQuestion.media} />
@@ -895,7 +896,7 @@ export default function ReviewInterface() {
                             {isOptCorrect ? <CheckCircle className="w-3.5 h-3.5" /> : isOptSelected && !isOptCorrect ? <XCircle className="w-3.5 h-3.5" /> : label}
                           </div>
                           <div className="flex-1 leading-normal markdown-body">
-                            <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                            <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]}>
                               {optText || ''}
                             </Markdown>
                             <MediaViewer media={option.media} />
@@ -912,7 +913,7 @@ export default function ReviewInterface() {
                         <Sparkles className="w-3.5 h-3.5 text-indigo-600" /> Explanation & Solution:
                       </h5>
                       <div className="text-xs sm:text-sm text-indigo-950 leading-relaxed markdown-body">
-                        <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                        <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]}>
                           {expText || ''}
                         </Markdown>
                         <MediaViewer media={currentQuestion.explanationMedia} />

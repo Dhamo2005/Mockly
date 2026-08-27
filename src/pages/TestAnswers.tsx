@@ -21,6 +21,7 @@ import { Language } from '../types';
 import Markdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
+import rehypeRaw from 'rehype-raw';
 import 'katex/dist/katex.min.css';
 
 export default function TestAnswers() {
@@ -341,7 +342,7 @@ export default function TestAnswers() {
 
             {/* Question Text */}
             <div className="text-xs sm:text-sm font-medium text-slate-900 leading-relaxed markdown-body">
-              <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+              <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]}>
                 {qText}
               </Markdown>
             </div>
@@ -374,7 +375,7 @@ export default function TestAnswers() {
                       {isCorrect ? <CheckCircle className="w-3.5 h-3.5 text-white" /> : label}
                     </div>
                     <div className="flex-1 leading-snug markdown-body truncate sm:whitespace-normal">
-                      <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                      <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]}>
                         {optText}
                       </Markdown>
                     </div>
@@ -398,7 +399,7 @@ export default function TestAnswers() {
               </div>
               <div className="text-slate-800 leading-normal text-[11px] sm:text-xs markdown-body">
                 {explanation ? (
-                  <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                  <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]}>
                     {explanation}
                   </Markdown>
                 ) : (
@@ -486,7 +487,7 @@ export default function TestAnswers() {
 
                   {/* Question Text */}
                   <div className="font-semibold text-slate-800 leading-snug markdown-body">
-                    <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                    <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]}>
                       {qTextStr}
                     </Markdown>
                   </div>
@@ -517,7 +518,7 @@ export default function TestAnswers() {
                             {label}
                           </span>
                           <span className="truncate leading-tight markdown-body">
-                            <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                            <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]}>
                               {optText}
                             </Markdown>
                           </span>
@@ -530,7 +531,7 @@ export default function TestAnswers() {
                   {expStr && (
                     <div className="bg-slate-50 border-l-2 border-cyan-500 p-1.5 text-[11px] text-slate-600 rounded-r markdown-body">
                       <strong>Solution: </strong>
-                      <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                      <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]}>
                         {expStr}
                       </Markdown>
                     </div>

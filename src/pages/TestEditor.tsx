@@ -11,7 +11,9 @@ import { getLocalizedText } from '../lib/utils';
 import Markdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
+import rehypeRaw from 'rehype-raw';
 import 'katex/dist/katex.min.css';
+import { RichTextEditor } from '../components/RichTextEditor';
 
 const DEFAULT_QUESTION: Question = {
   id: '',
@@ -36,7 +38,7 @@ const DEFAULT_QUESTION: Question = {
 const LatexPreview = ({ content }: { content: string }) => (
   <div className="prose prose-sm max-w-none text-slate-700 bg-slate-50 p-3 rounded-xl border border-slate-200 mt-2">
     <div className="markdown-body">
-      <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+      <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]}>
         {content || '*Preview will appear here*'}
       </Markdown>
     </div>
@@ -167,15 +169,14 @@ const QuestionEditor = ({
         {/* Question Text */}
         <div>
           <div className="flex items-center justify-between mb-2">
-            <label className="block text-xs font-bold text-slate-600">Question Text (LaTeX & Markdown Supported)</label>
+            <label className="block text-xs font-bold text-slate-600">Question Text (LaTeX Supported via $$math$$)</label>
             <ImageUploadButton 
               onUpload={(mediaItem) => onUpdate({ ...question, media: [...(question.media || []), mediaItem] })} 
             />
           </div>
-          <textarea 
+          <RichTextEditor 
             value={question.text.en || ''}
-            onChange={e => onUpdate({ ...question, text: { ...question.text, en: e.target.value } })}
-            className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:border-blue-500 focus:outline-none min-h-[120px] font-mono"
+            onChange={(val) => onUpdate({ ...question, text: { ...question.text, en: val } })}
             placeholder="Enter question text here... use $$ for display math and $ for inline math."
           />
           {question.text.en && <LatexPreview content={question.text.en} />}
@@ -224,14 +225,13 @@ const QuestionEditor = ({
                   />
                 </div>
                 <div className="pl-9">
-                  <textarea 
+                  <RichTextEditor 
                     value={opt.text.en || ''}
-                    onChange={e => {
+                    onChange={(val) => {
                       const newOptions = [...question.options];
-                      newOptions[idx] = { ...opt, text: { ...opt.text, en: e.target.value } };
+                      newOptions[idx] = { ...opt, text: { ...opt.text, en: val } };
                       onUpdate({ ...question, options: newOptions });
                     }}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:border-blue-500 focus:outline-none bg-white font-mono min-h-[60px]"
                     placeholder={`Option ${String.fromCharCode(65 + idx)} text (LaTeX supported)...`}
                   />
                   {opt.text.en && <LatexPreview content={opt.text.en} />}
@@ -260,11 +260,10 @@ const QuestionEditor = ({
               label="Attach Image to Explanation"
             />
           </div>
-          <textarea 
+          <RichTextEditor 
             value={question.explanation?.en || ''}
-            onChange={e => onUpdate({ ...question, explanation: { ...question.explanation, en: e.target.value } })}
-            className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:border-blue-500 focus:outline-none min-h-[100px] font-mono"
-            placeholder="Explain why the correct option is correct (LaTeX & Markdown supported)..."
+            onChange={(val) => onUpdate({ ...question, explanation: { ...question.explanation, en: val } })}
+            placeholder="Explain why the correct option is correct (LaTeX supported)..."
           />
           {question.explanation?.en && <LatexPreview content={question.explanation.en} />}
           <MediaGallery 
@@ -566,7 +565,7 @@ export default function TestEditor() {
                           </div>
                           <div className="text-sm font-medium text-slate-700 line-clamp-2 md:line-clamp-3 prose prose-sm max-w-none">
                             <div className="markdown-body">
-                              <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                              <Markdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]}>
                                 {getLocalizedText(q.text, language) || '*Empty Question*'}
                               </Markdown>
                             </div>
