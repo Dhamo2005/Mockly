@@ -35,7 +35,7 @@ const SCOPE = 'openid email profile https://www.googleapis.com/auth/drive.file';
 
 export const GOOGLE_CLIENT_ID =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GOOGLE_CLIENT_ID) ||
-  '449615236612-atqbkv0qddttm4r61do61ad0m64nsp3u.apps.googleusercontent.com';
+  '283792158322-4lgo0dtpqgurlr8ttjrb3ck9v927dfme.apps.googleusercontent.com';
 
 const STORAGE_KEY_TOKEN = 'mockly_gdrive_access_token';
 const STORAGE_KEY_EXPIRY = 'mockly_gdrive_token_expiry';
